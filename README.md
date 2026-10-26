@@ -5,7 +5,28 @@
 
 ---
 
-> 📖 在线文档（Pages）：https://tom982346-ctrl.github.io/temu-amazon-scraper/
+> 🔗 **仓库**：https://github.com/tom982346-ctrl/temu-amazon-scraper
+> 📚 **Wiki**：https://github.com/tom982346-ctrl/temu-amazon-scraper/wiki
+> 📄 **文档目录**：仓库 [`wiki/`](wiki/) 目录（含全部逆向成果与踩坑记录）
+>
+> **另一台电脑一键复现**：
+> ```bash
+> git clone https://github.com/tom982346-ctrl/temu-amazon-scraper.git
+> cd temu-amazon-scraper
+> python3 setup.py
+> AMZ_KEYWORD="laundry bag" AMZ_LIMIT=80 vendor/amazon-scraper/.venv/bin/python amazon_collect.py
+> ```
+>
+> **文档速查**
+>
+> | 页面 | 内容 |
+> |---|---|
+> | [现状总览](wiki/01-status-overview.md) | 能力矩阵、实测数据、成本对比 |
+> | [Temu 反爬拆解](wiki/02-temu-antibot.md) | 4 道门、错误码语义、20+ 种绕过尝试 |
+> | [Temu API 逆向](wiki/03-temu-api-reverse.md) | 端点、参数、JS bundle 挖掘方法 |
+> | [Amazon 实战](wiki/04-amazon-practice.md) | 采用项目、21 端点、详情字段结构 |
+> | [踩坑清单](wiki/05-pitfalls.md) | 环境代理、端口冲突、验证码死循环等 12 项 |
+> | [换机续作](wiki/06-handoff.md) | 在另一台电脑继续的完整步骤 |
 
 ## 一、结论速览
 

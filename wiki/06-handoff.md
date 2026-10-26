@@ -7,14 +7,16 @@
 ## 一、最快路径（3 条命令）
 
 ```bash
-# 1. 解压
-cd ~/Downloads && unzip temu-amazon-scraper.zip && cd temu-amazon-scraper
-
-# 2. 一键装环境（自动 clone + venv + 依赖）
+# 方式 A：从 GitHub clone（推荐，代码与文档同步更新）
+git clone https://github.com/tom982346-ctrl/temu-amazon-scraper.git
+cd temu-amazon-scraper
 python3 setup.py
+AMZ_KEYWORD="laundry bag" AMZ_LIMIT=80 vendor/amazon-scraper/.venv/bin/python amazon_collect.py
 
-# 3. 跑 Amazon（最完整的链路）
-AMZ_KEYWORD="laundry bag" AMZ_LIMIT=80 $PWD/vendor/amazon-scraper/.venv/bin/python amazon_collect.py
+# 方式 B：用离线包（zip 含实测样本与全部图片）
+cd ~/Downloads && unzip temu-amazon-scraper.zip && cd temu_scraper
+python3 setup.py
+AMZ_KEYWORD="laundry bag" AMZ_LIMIT=80 vendor/amazon-scraper/.venv/bin/python amazon_collect.py
 ```
 
 > `setup.py` 会把 amazon-scraper clone 到包内 `vendor/amazon-scraper`，不污染系统。
