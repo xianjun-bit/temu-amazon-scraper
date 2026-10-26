@@ -28,6 +28,8 @@
 > | [踩坑清单](wiki/05-pitfalls.md) | 环境代理、端口冲突、验证码死循环等 12 项 |
 > | [换机续作](wiki/06-handoff.md) | 在另一台电脑继续的完整步骤 |
 
+> 📖 在线文档（Pages）：https://tom982346-ctrl.github.io/temu-amazon-scraper/
+
 ## 一、结论速览
 
 | 平台 | 关键词搜 80 个 | 五点描述 | 全部附图 | 价格/评分/销量 | 图片下载 | 结论 |

@@ -21,7 +21,7 @@ PAGES = [
     ("06-handoff.md", "换机续作"),
 ]
 
-DOCS.mkdir(exist_ok=True)
+DOCS.mkdir(parents=True, exist_ok=True)  # WorkBuddy 路径层对 exist_ok 也会抛，忽略
 
 # 复制 wiki 页（去掉 00-index，单独做首页）
 for src, _ in PAGES:
