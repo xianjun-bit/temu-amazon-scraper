@@ -1,0 +1,13 @@
+{
+  "name": "temu-scraper",
+  "version": "1.0.0",
+  "description": "Temu 选品数据抓取器 - curl_cffi 突破 JS challenge",
+  "main": "temu_scrape.py",
+  "scripts": {
+    "search": "python3 temu_scrape.py search",
+    "urls": "python3 temu_scrape.py urls"
+  },
+  "dependencies": {
+    "playwright": "^1.64.1"
+  }
+}

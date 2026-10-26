@@ -1,0 +1,17 @@
+# 环境
+.venv/
+venv/
+node_modules/
+__pycache__/
+*.pyc
+.browser_profile/
+
+# amazon-scraper clone 目录（setup.py 会自动拉）
+vendor/
+
+# 系统
+.DS_Store
+
+# 采集产出的图片（数据 CSV/JSON 保留，图片体积大不入库）
+output/images/
+output_amazon/images/
