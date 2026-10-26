@@ -1,0 +1,37 @@
+---
+layout: default
+title: Temu / Amazon 选品数据抓取
+---
+<div align="center">
+  <h1>🛒 跨平台选品数据抓取器</h1>
+  <p><strong>Temu + Amazon</strong> · 实测报告 · 逆向成果 · 踩坑记录</p>
+  <p>
+    <a href="https://github.com/tom982346-ctrl/temu-amazon-scraper">🔗 仓库</a> ·
+    <a href="https://github.com/tom982346-ctrl/temu-amazon-scraper/wiki">📚 Wiki</a> ·
+    <a href="index.md">📖 Markdown 版</a>
+  </p>
+</div>
+
+## 快速开始
+
+```bash
+git clone https://github.com/tom982346-ctrl/temu-amazon-scraper.git
+cd temu-amazon-scraper && python3 setup.py
+AMZ_KEYWORD="laundry bag" AMZ_LIMIT=80 vendor/amazon-scraper/.venv/bin/python amazon_collect.py
+```
+
+## 文档目录
+
+| 页面 | 内容 |
+|---|---|
+| [现状总览](01-status-overview.md) | 能力矩阵、实测数据、成本对比 |
+| [Temu 反爬拆解](02-temu-antibot.md) | 4 道门、错误码语义、20+ 种绕过尝试 |
+| [Temu API 逆向](03-temu-api-reverse.md) | 端点、参数、JS bundle 挖掘方法 |
+| [Amazon 实战](04-amazon-practice.md) | 采用项目、21 端点、详情字段结构 |
+| [踩坑清单](05-pitfalls.md) | 环境代理、端口冲突、验证码死循环等 12 项 |
+| [换机续作](06-handoff.md) | 在另一台电脑继续的完整步骤 |
+
+## 一句话现状
+
+- **Amazon**：完全跑通 — 关键词 → 80 商品 → 五点描述 + 全部附图 + 规格 + 变体 + 销量，免费
+- **Temu**：列表页（标题/价格/主图）能拿；详情页（五点/附图）被服务端登录墙 + anti-token 签名锁住
