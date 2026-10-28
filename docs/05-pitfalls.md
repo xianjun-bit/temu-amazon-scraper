@@ -209,3 +209,43 @@ def extract_json_after(text, marker):
 
 Temu challenge 对指纹版本敏感：chrome131 返回 3KB challenge，chrome124 返回 396KB 完整页。
 **用 chrome124**。
+
+---
+
+## 13. Amazon 详情接口返回 200 但内容残缺
+
+**症状**：详情接口 HTTP 200，有 `title`、有 `bullets`，但 `images` / `rating` / `variations` 是空的。
+`error` 字段也为空，看起来"成功"了。
+
+**根因**：Amazon 触发了**降级渲染**（部分区块不渲染），返回的是不完整页面。
+
+**解法**：判定"完整"不能只看 `title`，要同时检查关键字段：
+
+```python
+complete = bool(d.get("images")) and (d.get("rating") is not None)
+if complete or i == retries - 1:
+    if not complete:
+        d["_partial"] = True      # 标记出来，别静默丢数据
+    return d
+```
+
+实测：改之前 rating 9/10、bought_past_month 9/10；改之后补齐到 10/10。
+
+---
+
+## 14. 图片下载被 [:12] 截断
+
+**症状**：10 个商品 `image_count` 加起来 185，但实际只下了 90 张。
+
+**根因**：`for u in r["images"][:12]:` 每条只取前 12 个 URL。
+
+**解法**：去掉截断，全量下载；同时按 URL 去重（同一张图的 link/large/thumbnail 是不同尺寸，
+只取 `link` 高清版即可）：
+
+```python
+imgs = list(dict.fromkeys(imgs))   # 去重
+for u in r["images"]:               # 不截断
+    futs.append(ex.submit(dl, u, d))
+```
+
+实测：90 张 -> 188 张。
