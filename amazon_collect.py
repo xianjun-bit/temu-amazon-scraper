@@ -67,14 +67,26 @@ def search(keyword, pages=1, per=48):
 
 
 def details(asin, retries=3):
-    """抓详情，失败自动重试（Amazon 偶发反爬）"""
+    """抓详情，失败自动重试（Amazon 偶发反爬）
+
+    注意：Amazon 有时会返回 200 + 有 title 但 **images/rating/variations 为空**
+    的残缺响应（页面被降级渲染）。只看 title 会漏掉这种情况，
+    所以判定"完整"要同时看关键字段。
+    """
     last = None
     for i in range(retries):
         try:
             d = api(f"/products/details?product={asin}", timeout=120)
             if d and d.get("title"):
-                return d
-            last = d
+                # 关键字段齐全才算成功；缺 images 或 rating 视为残缺，重试
+                complete = bool(d.get("images")) and (d.get("rating") is not None)
+                if complete or i == retries - 1:
+                    if not complete:
+                        d["_partial"] = True
+                    return d
+                last = d
+            else:
+                last = d
         except Exception as e:
             last = {"asin": asin, "error": str(e)[:120]}
         time.sleep(2 + i * 2)
@@ -122,14 +134,16 @@ def main():
         asin = it.get("asin")
         d = details(asin)
         # images: [{link, thumbnail, large, variant}] —— 取所有尺寸，主图用 link
-        imgs, thumbs = [], []
+        # images: [{link(1500px), thumbnail, large(原图), variant}]
+        # 只取 link（高清主图），同一张图的多尺寸不重复收
+        imgs = []
         for im in (d.get("images") or []):
             if isinstance(im, dict):
-                if im.get("link"): imgs.append(im["link"])
-                elif im.get("large"): imgs.append(im["large"])
-                if im.get("thumbnail"): thumbs.append(im["thumbnail"])
+                u = im.get("link") or im.get("large")
+                if u: imgs.append(u)
             elif isinstance(im, str):
                 imgs.append(im)
+        imgs = list(dict.fromkeys(imgs))
         bullets = d.get("bullets") or []
         if isinstance(bullets, str): bullets = [bullets]
         pr = d.get("price") or {}
@@ -158,23 +172,23 @@ def main():
             "videos_count": d.get("videos_count"),
             "customers_say": (d.get("customers_say") or {}).get("summary") if isinstance(d.get("customers_say"), dict) else None,
             "url": f"https://www.amazon.com/dp/{asin}",
-            "error": d.get("error", ""),
+            "error": d.get("error", "") or ("残缺响应(缺图/评分)" if d.get("_partial") else ""),
         })
         r = rows[-1]
         print(f"  [{i}/{len(items)}] {asin} {'✅' if r['title'] else '❌'} "
               f"{(r['title'] or '')[:44]} | ${r['price']} | 图{r['image_count']} | "
               f"五点{r['bullet_count']} | ★{r['rating']}")
 
-    # 图片下载
-    with ThreadPoolExecutor(max_workers=10) as ex:
+    # 图片下载（全部附图，不截断；同一 ASIN 下多尺寸的 link/large 都会下）
+    with ThreadPoolExecutor(max_workers=12) as ex:
         futs = []
         for r in rows:
             d = OUT / "images" / (r["asin"] or "x")
             d.mkdir(parents=True, exist_ok=True)
-            for u in r["images"][:12]:
+            for u in r["images"]:
                 futs.append(ex.submit(dl, u, d))
         n = sum(bool(f.result()) for f in as_completed(futs))
-    print(f"\n>>> 图片下载 {n} 张")
+    print(f"\n>>> 图片下载 {n} 张（去重后 {len({u for r in rows for u in r['images']})} 个 URL）")
 
     # 导出
     cp = OUT / "products.csv"
