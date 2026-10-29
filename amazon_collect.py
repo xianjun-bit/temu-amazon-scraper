@@ -51,19 +51,42 @@ def api(path, timeout=120):
         return json.loads(r.read().decode())
 
 
-def search(keyword, pages=1, per=48):
-    items = []
-    for p in range(1, pages + 1):
+def search(keyword, want=80, max_pages=12):
+    """按需翻页搜索。
+
+    实测坑：Amazon 偶尔某一页返回空 results（page2 -> 0 条），
+    所以单页失败/空结果不能中断整轮，要继续试下一页。
+    """
+    items, seen = [], set()
+    empty_streak = 0
+    for p in range(1, max_pages + 1):
         u = f"/search?query={quote(keyword)}&country=US&page={p}"
         try:
             d = api(u)
         except Exception as e:
-            print(f"  搜索页{p} 失败: {str(e)[:80]}")
-            break
-        res = d.get("results", [])
+            print(f"  搜索页{p} 失败: {str(e)[:60]}")
+            empty_streak += 1
+            if empty_streak >= 3:
+                print("  连续 3 页失败，停止翻页")
+                break
+            continue
+        res = d.get("results", []) or []
         print(f"  搜索页{p}: {len(res)} 条 (共{d.get('count')} 结果)")
-        items += res
-    return items
+        if not res:
+            empty_streak += 1
+            if empty_streak >= 3:
+                print("  连续 3 页空结果，停止翻页")
+                break
+            continue
+        empty_streak = 0
+        added = 0
+        for it in res:
+            a = it.get("asin")
+            if a and a not in seen:
+                seen.add(a); items.append(it); added += 1
+        if len(items) >= want:
+            break
+    return items[:want]
 
 
 def details(asin, retries=3):
@@ -125,14 +148,37 @@ def main():
         return
 
     print(f">>> 搜索: {KEYWORD}")
-    items = search(KEYWORD, pages=2)
+    items = search(KEYWORD, want=LIMIT)
     items = items[:LIMIT]
     print(f">>> 命中 {len(items)} 个商品，开始抓详情")
+
+    # 并发抓详情（串行 80 条要 10+ 分钟；并发后约 1-2 分钟）
+    WORKERS = int(os.environ.get("AMZ_WORKERS", "6"))
+    print(f">>> 并发抓详情（{WORKERS} 线程）")
+    fetched = {}
+
+    def _get(it):
+        a = it.get("asin")
+        return a, details(a)
+
+    with ThreadPoolExecutor(max_workers=WORKERS) as ex:
+        futs = {ex.submit(_get, it): it for it in items}
+        done = 0
+        for f in as_completed(futs):
+            it = futs[f]
+            try:
+                a, d = f.result()
+                fetched[a] = d
+            except Exception as e:
+                fetched[it.get("asin")] = {"asin": it.get("asin"), "error": str(e)[:120]}
+            done += 1
+            if done % 10 == 0 or done == len(items):
+                print(f"  详情进度 {done}/{len(items)}")
 
     rows = []
     for i, it in enumerate(items, 1):
         asin = it.get("asin")
-        d = details(asin)
+        d = fetched.get(asin) or {"asin": asin, "error": "no result"}
         # images: [{link, thumbnail, large, variant}] —— 取所有尺寸，主图用 link
         # images: [{link(1500px), thumbnail, large(原图), variant}]
         # 只取 link（高清主图），同一张图的多尺寸不重复收
@@ -174,9 +220,11 @@ def main():
             "url": f"https://www.amazon.com/dp/{asin}",
             "error": d.get("error", "") or ("残缺响应(缺图/评分)" if d.get("_partial") else ""),
         })
-        r = rows[-1]
-        print(f"  [{i}/{len(items)}] {asin} {'✅' if r['title'] else '❌'} "
-              f"{(r['title'] or '')[:44]} | ${r['price']} | 图{r['image_count']} | "
+
+    print(f"\n=== 抓取结果（{len(rows)} 条）===")
+    for i, r in enumerate(rows, 1):
+        print(f"  [{i}/{len(rows)}] {r['asin']} {'✅' if r['title'] else '❌'} "
+              f"{(r['title'] or '')[:42]} | {str(r['price'])[:8]} | 图{r['image_count']} | "
               f"五点{r['bullet_count']} | ★{r['rating']}")
 
     # 图片下载（全部附图，不截断；同一 ASIN 下多尺寸的 link/large 都会下）
