@@ -27,6 +27,22 @@ from pathlib import Path
 from curl_cffi import requests
 
 BASE = "https://www.temu.com"
+
+# Temu challenge 对 TLS 指纹是动态判定的（同一指纹上轮能过下轮可能失效），
+# 所以请求时轮换指纹，而不是写死一个。
+_FP_CYCLE = ["chrome131", "chrome124", "chrome120", "chrome119",
+             "safari17_0", "safari15_3", "edge101"]
+_fp_idx = 0
+
+
+def _pick_imp():
+    global _fp_idx
+    imp = _FP_CYCLE[_fp_idx % len(_FP_CYCLE)]
+    _fp_idx += 1
+    return imp
+
+
+
 ROOT = Path(__file__).parent
 OUT = ROOT / "output"
 PROFILE = ROOT / ".browser_profile"
@@ -82,7 +98,7 @@ def run_apify(keyword, limit, token, actor="crw~temu-products-scraper"):
     for i, pl in enumerate(payloads):
         print(f"    尝试输入形态 #{i}: {json.dumps(pl, ensure_ascii=False)}")
         try:
-            r = requests.post(url, json=pl, impersonate="chrome124", timeout=300)
+            r = requests.post(url, json=pl, impersonate=_pick_imp(), timeout=300)
             if r.status_code == 200:
                 items = r.json()
                 if isinstance(items, dict):
@@ -309,7 +325,7 @@ def download_images(rows, outdir):
 
     def one(u, d):
         try:
-            r = requests.get(u, impersonate="chrome124", timeout=30)
+            r = requests.get(u, impersonate=_pick_imp(), timeout=30)
             ct = r.headers.get("content-type","")
             if r.status_code == 200 and len(r.content) > 1200:
                 ext = ".png" if "png" in ct else (".webp" if "webp" in ct else ".jpg")

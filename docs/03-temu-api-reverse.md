@@ -207,3 +207,101 @@ window.rawData.store = {
 `temu_parse.py` 提供 `get_rawdata(html)`：用**括号平衡法**提取 `window.rawData=` 后的完整 JSON。
 
 ⚠️ 不能用 `\{.*?\}` 非贪婪正则 —— 嵌套对象会在第一层就截断（我踩过这个坑）。
+
+---
+
+## 【专题】API 模式到底是怎么跑通的？（2026-10-29 实验结论）
+
+`--mode api` 走的是 `POST /api/alexa/homepage/goods_list`。为了搞清楚"为什么浏览器内 fetch 能过、
+curl_cffi 怎么都不行"，做了 6 组对照实验，结论如下。
+
+### 实测数据
+
+| 组 | 做法 | 结果 |
+|---|---|---|
+| A | 浏览器内 `fetch()`（基线） | ✅ 200, 64KB, 40 商品 |
+| D | 浏览器内 `fetch(credentials:'omit')`（不带 cookie） | ✅ **200**（63852B） |
+| B | curl_cffi + 浏览器全部 cookie + 全部请求头 | ❌ 429 |
+| C | curl_cffi + 浏览器 cookie，去掉 anti-content | ❌ 429 |
+| B2 | curl_cffi + 仅 anti-content 头，无 cookie | ❌ 429 |
+| B3 | curl_cffi 无 cookie 无头 | ❌ 429 |
+| F | curl_cffi × 9 种指纹 × HTTP/1.1&2（18 组） | ❌ **全部 429** |
+| — | 浏览器内连发 5 次 | ✅ 5/5 全 200，每次 40 商品 |
+
+### 结论一：不是 cookie 也不是 anti-content
+
+D 组去掉 cookie 照样 200；B/C/B2/B3 各种 cookie 组合全 429。
+**服务端根本不靠 cookie 或 anti-content 判这个接口**。
+
+### 结论二：不是 TLS 指纹
+
+F 组 18 种组合（chrome119/120/124/131/136 + safari17_0/safari15_3 + edge101 + firefox133，
+各测 HTTP/1.1 与 HTTP/2）**全部 429**，而浏览器内 fetch 稳定 200。
+
+⇒ 判定依据比 TLS 指纹更深：**浏览器进程内的真实行为轨迹**（JS 运行时、Cookie 写入顺序、
+请求时序、真实网络栈特征等），curl_cffi 无论如何仿造都过不去。
+
+### 结论三：`verifyAuthToken` 就是 verifyCode
+
+浏览器加载首页时的导航链：
+
+```
+https://www.temu.com/
+  → https://www.temu.com/?is_back=1
+  → https://www.temu.com/bgn_verification.html?verifyCode=<40位随机码>&from=...
+```
+
+而 cookie 里：
+
+```
+verifyAuthToken = MbV14d3xtOpH-HYsNVOL7g39695b7429e6e01a3   ← 与 URL 的 verifyCode 完全一致
+```
+
+**`verifyAuthToken` cookie 值 == URL 上的 `verifyCode`** —— 这就是风控通关凭据。
+`bgn_verification.html` 页本身是**不需要人工过验证码的**（124KB 直接 200），
+说明风控在服务端已经给这次会话发了通行证。
+
+但把浏览器的 verifyAuthToken + 全部 cookie 搬给 curl_cffi **依然 429**，
+说明这个 token 是与「发起请求的客户端环境」绑定的，单独搬过去无效。
+
+### 结论四：curl_cffi 的 challenge 是不稳定的
+
+同一份代码、同一个 IP，不同时间的指纹表现会变：
+
+```
+chrome124   len=2889      ← challenge 页（本次被挡）
+chrome131   len=376978    ← ✅ 真实首页
+chrome120   len=2889      ← challenge
+safari17_0  len=2889      ← challenge
+```
+
+之前测「chrome124 稳定 26/26」是那个时间窗的结论。
+**实测建议：curl_cffi 用于抓页面 HTML 时要准备多个指纹轮换 + 重试**，
+不能假定某个指纹永远有效。
+
+### 最终实践形态
+
+既然只有浏览器进程内能过，就老老实实用浏览器：
+
+```python
+ctx = chromium.launch_persistent_context(profile, headless=True, channel="chrome", ...)
+page.goto("https://www.temu.com/", wait_until="domcontentloaded")   # 建立真会话
+page.wait_for_timeout(10000)                                        # 等 JS 跑完写 cookie
+
+result = page.evaluate("""async (body) => {
+  const res = await fetch('/api/alexa/homepage/goods_list', {
+    method: 'POST', credentials: 'include',
+    headers: {'Content-Type': 'application/json;charset=UTF-8'},
+    body: JSON.stringify(body)
+  });
+  return {status: res.status, text: await res.text()};
+}""", {"offset":0,"count":120,"list_id":"","opt_id":None,"listId":"",
+       "scene":"home","page_list_id":"","extend_fields":{}})
+```
+
+**关键点**：
+
+1. 必须先 `goto` 首页让 JS 执行、写好 cookie（直接在 about:blank 上 fetch 会 `Failed to fetch`）
+2. fetch 必须在**页面上下文**里（`page.evaluate`），不能是 Node 侧的 HTTP 请求
+3. `credentials:'include'` 或 `'omit'` 都行（服务端不看 cookie）
+4. 首页 `bgn_verification` 跳转是**正常流程**，不是被拦 —— 页面自动带上 verifyCode 通过

@@ -22,7 +22,35 @@ from curl_cffi import requests
 
 BASE = "https://www.temu.com"
 OUT = Path(__file__).parent / "output"
-IMPERSONATES = ["chrome124", "chrome131", "chrome120", "safari17_0", "chrome119"]
+
+# Temu 的 JS Challenge 对 TLS 指纹是**动态判定**的：
+# 同一 IP 下 chrome124 上一轮 26/26 全过，下一轮却只有 chrome131 能过。
+# 所以不能固定某一个指纹 —— 每次请求轮换，失败就换下一个。
+IMPERSONATES = [
+    "chrome131", "chrome124", "chrome120", "chrome119", "chrome136",
+    "safari17_0", "safari15_3", "safari18_0", "edge101", "edge99",
+]
+
+# 实测过 challenge 的指纹会被优先复用（首次探测后缓存）
+_GOOD_FINGERPRINTS: list[str] = []
+
+
+def probe_fingerprint(session, url="https://www.temu.com/"):
+    """探测当前哪些指纹能过 challenge，结果缓存复用"""
+    global _GOOD_FINGERPRINTS
+    if _GOOD_FINGERPRINTS:
+        return _GOOD_FINGERPRINTS
+    for imp in IMPERSONATES:
+        try:
+            r = session.get(url, impersonate=imp, timeout=25)
+            if len(r.text) > 10000 and "window.challenge" not in r.text[:4000]:
+                _GOOD_FINGERPRINTS.append(imp)
+        except Exception:
+            pass
+    if not _GOOD_FINGERPRINTS:
+        _GOOD_FINGERPRINTS = IMPERSONATES[:]
+    return _GOOD_FINGERPRINTS
+
 
 
 # ---------------------------------------------------------------- 工具
@@ -38,18 +66,24 @@ def new_session(region="37"):
     return s
 
 
-def fetch(s, url, imp=None, retries=3):
-    """带重试 + 指纹轮换的抓取，返回 HTML（失败返回 None）"""
+def fetch(s, url, imp=None, retries=6):
+    """带重试 + 指纹轮换的抓取，返回 HTML（失败返回 None）
+
+    实测：Temu 的 challenge 判定会随时间变化，同一指纹上一轮能过下一轮就废。
+    所以这里先探测可用指纹，再逐个尝试，且每次失败都换指纹。
+    """
+    cands = probe_fingerprint(s) if not imp else [imp]
     for i in range(retries):
+        use = imp or cands[i % len(cands)]
         try:
-            r = s.get(url, impersonate=imp or IMPERSONATES[i % len(IMPERSONATES)],
-                      timeout=35, allow_redirects=True)
+            r = s.get(url, impersonate=use, timeout=35, allow_redirects=True)
             t = r.text
+            # 判定：足够长 且 不是 challenge 壳
             if len(t) > 20000 and "window.challenge" not in t[:4000]:
                 return t
         except Exception:
             pass
-        time.sleep(1.5 + random.random() * 2)
+        time.sleep(1.2 + random.random() * 2)
     return None
 
 
@@ -128,7 +162,7 @@ def search_urls_google(keyword, limit=80):
     for q in [f"site:temu.com {keyword}", f"temu.com {keyword} -g-"]:
         try:
             r = requests.get(f"https://www.bing.com/search?q={requests.utils.quote(q)}",
-                             impersonate="chrome124", timeout=25)
+                             impersonate=IMPERSONATES[i % len(IMPERSONATES)], timeout=25)
             hits = re.findall(r'https?://(?:www\.)?temu\.com/[^\s"\'<>]*?-g-\d{10,}\.html', r.text)
             for h in hits:
                 h = h.split('?')[0]
@@ -209,7 +243,7 @@ def download_images(urls, folder, concurrency=8):
 
 def download_one(url, folder):
     try:
-        r = requests.get(url, impersonate="chrome124", timeout=30)
+        r = requests.get(url, impersonate=IMPERSONATES[hash(url) % len(IMPERSONATES)], timeout=30)
         if r.status_code == 200 and len(r.content) > 1000:
             ext = ".jpg"
             if "png" in r.headers.get("content-type", ""): ext = ".png"
