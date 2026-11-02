@@ -32,6 +32,59 @@ OUT_TEMU = OUT / "temu"
 BASE = "https://www.temu.com"
 AMZ_BASE = "https://www.amazon.com"
 
+# Playwright 的 persistent_context 独占 profile 目录 —— 两个实例用同一个目录会
+# 互相把对方的 Chrome driver 踢掉，报 "Connection.init: Connection closed
+# while reading from the driver"。所以每个采集进程用**独立**的 profile。
+_PROFILE_DIRS: dict[str, str] = {}
+
+
+class _ProfileLock:
+    """browser 模式的 profile 是固定的（要保留登录态），同一时刻只允许一个实例。
+
+    用 O_EXCL 创建一个锁文件；拿不到就说明已有别的实例在用。
+    """
+
+    def __init__(self, path: Path):
+        self.path = path
+        self.fh = None
+
+    def __enter__(self):
+        import fcntl
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.fh = open(self.path, "w")
+        try:
+            fcntl.flock(self.fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            self.fh.close()
+            raise RuntimeError(
+                "已有另一个 Temu 浏览器任务在运行（profile 被占用）。\n"
+                "两个浏览器不能用同一个 profile —— 会互相踢掉对方，报 "
+                "'Connection.init: Connection closed while reading from the driver'。\n"
+                "解决：等前一个任务跑完，或用 TEMU_PROFILE=/tmp/别的目录 指定独立 profile。")
+        return self
+
+    def __exit__(self, *a):
+        import fcntl
+        try:
+            fcntl.flock(self.fh, fcntl.LOCK_UN)
+        except Exception:
+            pass
+        try:
+            self.fh.close()
+        except Exception:
+            pass
+
+
+def _profile_dir(tag: str = "default") -> str:
+    """给每个采集任务分配独立 profile 目录（互不干扰）"""
+    import tempfile
+    key = f"{tag}-{os.getpid()}"
+    d = _PROFILE_DIRS.get(key)
+    if not d:
+        d = tempfile.mkdtemp(prefix=f"temu_prof_{tag}_")
+        _PROFILE_DIRS[key] = d
+    return d
+
 MUA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
        "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
 
@@ -222,18 +275,36 @@ def scrape_amazon(keyword: str, limit: int = 20, download_images: bool = True,
 # ══════════════════════════════════════════════════════════════
 # Temu · api 模式（免登录，只拿列表页字段）
 # ══════════════════════════════════════════════════════════════
-def scrape_temu_api(limit: int = 40, download_images: bool = True):
-    """Temu 免登录模式：首页 goods_list API。逐条 yield。"""
-    from playwright.sync_api import sync_playwright
-    from curl_cffi import requests
-
-    prof = ROOT / ".browser_profile"
-    with sync_playwright() as pw:
+def _launch_browser(pw_factory, profile: str, headless: bool):
+    """启动 Chrome（persistent context）。失败时给出可读错误。"""
+    try:
+        pw = pw_factory().start()
         ctx = pw.chromium.launch_persistent_context(
-            str(prof), headless=True, channel="chrome",
+            profile, headless=headless, channel="chrome",
             viewport={"width": 1500, "height": 950}, locale="en-US",
             timezone_id="America/New_York", user_agent=MUA,
             args=["--disable-blink-features=AutomationControlled"])
+        return pw, ctx
+    except Exception as e:
+        raise RuntimeError(
+            f"Playwright 启动 Chrome 失败：{str(e)[:220]}\n"
+            f"排查：\n"
+            f"  ① 是否有别的采集任务在跑（浏览器 profile 冲突）\n"
+            f"  ② Chrome 是否正常：/Applications/Google Chrome.app\n"
+            f"  ③ 直接试跑：.venv/bin/python collectors.py --json temu_api '' 5") from e
+
+
+def scrape_temu_api(limit: int = 40, download_images: bool = True):
+    """Temu 免登录模式：首页 goods_list API。逐条 yield。
+
+    用**独立**的临时 profile —— 多个实例共用一个 profile 会互相踢掉对方的
+    Chrome driver，报 "Connection.init: Connection closed while reading from the driver"。
+    """
+    from playwright.sync_api import sync_playwright
+
+    prof = _profile_dir("api")
+    pw, ctx = _launch_browser(sync_playwright, prof, headless=True)
+    try:
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         page.goto(BASE + "/", wait_until="domcontentloaded", timeout=60000)
         page.wait_for_timeout(10000)
@@ -259,7 +330,11 @@ def scrape_temu_api(limit: int = 40, download_images: bool = True):
             elif isinstance(o, list):
                 for v in o: walk(v)
         walk(j)
-        ctx.close()
+    finally:
+        try: ctx.close()
+        except Exception: pass
+        try: pw.stop()
+        except Exception: pass
 
     items = items[:limit]
     yield {"_phase": "search", "message": f"取到 {len(items)} 个商品"}
@@ -279,6 +354,17 @@ def scrape_temu_api(limit: int = 40, download_images: bool = True):
                     images=imgs, url=link or f"{BASE}/goods.html?goods_id={gid}")
         yield {"_phase": "item", "record": rec}
 
+    # 图片（数据已推送，后台补图）
+    if download_images:
+        yield {"_phase": "images", "message": "开始下载图片…"}
+        total = 0
+        for it in items:
+            gi = it.get("image") or {}
+            if isinstance(gi, dict) and gi.get("url"):
+                m = _save_images([gi["url"]], OUT_TEMU / "images" / str(it.get("goods_id")))
+                total += len(m)
+        yield {"_phase": "images_done", "message": f"图片下载 {total} 张"}
+
 
 # ══════════════════════════════════════════════════════════════
 # Temu · browser 模式（需登录/过验证码，抓全字段）
@@ -297,13 +383,22 @@ def scrape_temu_browser(keyword: str, limit: int = 80, download_images: bool = T
          f"&srch_enter_source=top_search_entrance_10005&refer_page_name=home"
          f"&refer_page_sn=10005&filter_items=1%3A1")
 
-    prof = ROOT / ".browser_profile"
-    with sync_playwright() as pw:
-        ctx = pw.chromium.launch_persistent_context(
-            str(prof), headless=headless, channel="chrome",
-            viewport={"width": 1500, "height": 950}, locale="en-US",
-            timezone_id="America/New_York", user_agent=MUA,
-            args=["--disable-blink-features=AutomationControlled"])
+    # browser 模式要保留登录态 -> 用固定 profile（但同一时刻只能有一个实例）
+    prof = Path(os.environ.get("TEMU_PROFILE") or str(ROOT / ".browser_profile"))
+    lock = _ProfileLock(prof.parent / f"{prof.name}.lock")
+    lock.__enter__()
+    try:
+        return _scrape_temu_browser_inner(keyword, limit, download_images, headless, prof)
+    finally:
+        lock.__exit__()
+
+
+def _scrape_temu_browser_inner(keyword, limit, download_images, headless, prof: Path):
+    from playwright.sync_api import sync_playwright
+    from curl_cffi import requests
+
+    pw, ctx = _launch_browser(sync_playwright, str(prof), headless=headless)
+    try:
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
 
         yield {"_phase": "search", "message": f"打开搜索页：{keyword}"}
@@ -378,7 +473,11 @@ def scrape_temu_browser(keyword: str, limit: int = 80, download_images: bool = T
 
         if download_images:
             yield {"_phase": "images", "message": "开始下载图片…"}
-        ctx.close()
+    finally:
+        try: ctx.close()
+        except Exception: pass
+        try: pw.stop()
+        except Exception: pass
 
 
 def random_delay():

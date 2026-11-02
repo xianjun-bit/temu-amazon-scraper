@@ -242,3 +242,57 @@ for u in r["images"]:               # 不截断
 ```
 
 实测：90 张 -> 188 张。
+
+---
+
+## 【专题】Playwright 多实例冲突（2026-11-02）
+
+### 症状
+
+Web 控制台跑 Temu 模式时报：
+
+```
+采集进程退出（code 1）
+  File ".../playwright/_impl/_connection.py", line 78, in send_return
+    await self._connection.wrap_api_call(
+  File ".../playwright/_impl/_connection.py", line 636, in wrap_api_call
+    raise rewrite_error(error, f"**{parsed_st['apiName']}:{error}")
+Exception: Connection.init: Connection closed while reading from the driver
+```
+
+**关键**：错误信息里的 "driver" 指 **Playwright**，不是 curl_cffi。
+
+### 三个不同的坑，同一个报错
+
+| # | 原因 | 症状 | 修法 |
+|---|---|---|---|
+| 1 | Playwright sync API 只能在**主线程**跑 | Web 里报、CLI 正常 | Web 用**子进程**跑采集器（`collectors.py --json`） |
+| 2 | 两个 Playwright 实例**共用同一个 profile 目录** | 同时跑两个任务，其中一个挂 | 每个进程用**独立临时 profile**（`tempfile.mkdtemp()`） |
+| 3 | browser 模式 profile 是固定的（要留登录态） | 两个 browser 任务互相踢 | 用 `fcntl.flock` **文件锁**串行化，冲突时给可读提示 |
+
+### 定位方法（可复用）
+
+1. **先确认是谁的错**：看 traceback 里的路径是 `playwright/_impl/_connection.py` → Playwright；
+   `curl_cffi/requests/exceptions.py` → curl_cffi
+2. **对比 CLI 与 Web**：同一份代码 CLI 能跑、Web 不能跑 → 怀疑线程模型（坑 1）
+3. **模拟并发**：起两个服务同时跑同一模式 → 复现坑 2
+4. **`_launch_browser()` 统一入口**：把启动逻辑收进一个函数，失败时给「① 是否有别的任务在跑
+   ② Chrome 是否正常 ③ 直接试跑命令」三条排查建议，而不是甩 traceback
+
+### 顺带发现
+
+`sync_playwright().start()` 返回的对象**不支持 `with` 协议**（只有 `sync_playwright()` 上下文管理器支持）。
+写 `with sync_playwright().start():` 会报
+`TypeError: 'Playwright' object does not support the context manager protocol`。
+
+正确写法：
+
+```python
+pw = sync_playwright().start()
+try:
+    ctx = pw.chromium.launch_persistent_context(...)
+    ...
+finally:
+    ctx.close()
+    pw.stop()
+```
