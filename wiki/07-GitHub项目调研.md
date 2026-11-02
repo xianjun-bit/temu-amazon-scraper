@@ -260,3 +260,109 @@ npx -y rea-agents@latest analyze-javascript-application /tmp/temu_bundle --json 
 
 > ⚠️ 环境提示：REA 要求 node `^22.23.4 || ^24.22.1`，当前是 `v22.22.2`，
 > npm 会报 EBADENGINE 警告（不影响运行，但建议升级 node）。
+---
+
+## 【专题】REA 工具链用法（2026-11-02 升级后实测）
+
+### 环境现状
+
+| 项 | 值 |
+|---|---|
+| node（用户自己的） | **v22.23.4**（`~/node`，22.x 最新 LTS） |
+| WorkBuddy 自带 node | v22.22.2（PATH 优先，**没动**，改它有风险） |
+| rea-agents CLI | 6.8.0 |
+| skill | v49（aligned） |
+| MCP 注册 | codex / workbuddy 均 aligned |
+
+### 怎么用（重要）
+
+**WorkBuddy 的 node 在 PATH 最前面**，所以 `node -v` 永远显示旧版。
+已装包装脚本 `~/.local/bin/rea`，强制用新版 node：
+
+```bash
+rea doctor --json
+rea analyze-javascript-application /path/to/app --json
+rea analyze-web-bundle <cdpEndpoint> <targetId> --view '{...}'
+```
+
+> 别再用 `npx -y rea-agents@latest` —— 那会走旧 node，报 EBADENGINE。
+
+### MCP 注册的坑
+
+`rea setup` 写出的注册里 `env.PATH` 会**保留旧 node 路径**。必须手动改成：
+
+```json
+"command": "npx",
+"args": ["-y", "rea-agents@6.8.0", "mcp"],
+"env": { "PATH": "/Users/liuxianjun/node/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" }
+```
+
+⚠️ **`command` 必须保持 `"npx"`** —— 改成绝对路径（`/Users/liuxianjun/node/bin/npx`）
+虽然功能上等价，但 `rea doctor` 会判 `config_drift`。doctor 认的是
+「command=npx + PATH 里 node 正确」这个组合。
+
+### analyze-web-bundle 完整用法
+
+```bash
+# 1) 起带 CDP 的 Chrome
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+  --remote-debugging-port=9222 --user-data-dir=/tmp/rea_cdp_profile \
+  --no-first-run --no-sandbox --disable-gpu "https://www.temu.com/" &
+
+# 2) 取 targetId
+curl -s http://127.0.0.1:9222/json/list | python3 -c "
+import sys,json
+for t in json.load(sys.stdin):
+    if t.get('type')=='page' and 'temu.com' in t.get('url',''): print(t['id']); break"
+
+# 3) 跑
+rea analyze-web-bundle http://127.0.0.1:9222 <targetId> \
+  --allowed-origins "https://www.temu.com" \
+  --view '{"kind":"javascript-routes","collection":"routes","fields":["path","confidence"],"limit":60}' \
+  --detail summary --evidence_output /tmp/ev.json \
+  --max-heap-mb 8192 --analysis-timeout-ms 45000 --total-analysis-timeout-ms 280000
+```
+
+**view 的格式**（文档 `references/javascript-applications.md` 第 70 行）：
+```
+{"kind":"javascript-routes","collection":"routes","fields":["path","confidence"],"limit":20}
+```
+
+### 两个必踩的坑
+
+**① Chrome 必须在 Bash 沙箱外起**
+```
+sandbox initialization failed: Operation not permitted
+GPU process exited unexpectedly: exit_code=6
+FATAL: GPU process isn't usable. Goodbye.
+```
+→ 必须加 `--no-sandbox --disable-gpu`。Playwright 自己会处理，裸起 Chrome 不会。
+
+**② 后台进程活不过一次 Bash 调用**
+`nohup ... &` / `(cmd &)` 都会被回收 —— 必须在**同一次调用**里
+「起 Chrome → 取 targetId → 跑 rea → 杀 Chrome」。
+
+### 实测：对 Temu 的价值有限
+
+REA 成功分析 Temu 首页 bundle：
+
+| 指标 | 值 |
+|---|---|
+| 解析脚本数 | **27**（0 解析失败） |
+| 访问 AST 节点 | 24,292 |
+| `routes` | **0** |
+| `occurrences` | **0** |
+
+**原因**：`javascript-routes` 视图找的是**客户端路由**（React Router 那种
+`/product/:id` 模式）。Temu 是单页应用，URL 不随前端路由变化 → 天然为空。
+
+**结论**：
+- REA 的 **JS 解析器很强**（27 脚本 0 失败，2.4 万 AST 节点）
+- 但对 **API 端点提取** 不如定向 grep + 运行时观察
+- 逆向 Temu API 端点的有效组合仍然是：
+  **Playwright 抓包（看真实请求）+ grep bundle（找字符串）+ 错误码对照实验**
+
+### REA 的真正强项
+
+原生二进制 / Electron / ASAR / 固件逆向（Hopper / Ghidra / JADX）——
+本项目目前不需要（`doctor` 的 `healthy: False` 就是因为这些引擎没装）。
