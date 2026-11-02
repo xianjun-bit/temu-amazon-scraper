@@ -395,6 +395,7 @@ def scrape_temu_apify(keyword: str, limit: int = 80, token: str = "",
     """Apify 托管采集。逐条 yield。"""
     from curl_cffi import requests
 
+    token = token or os.environ.get("APIFY_TOKEN", "")
     if not token:
         raise RuntimeError("需要 Apify token（export APIFY_TOKEN=xxx）")
 
@@ -515,14 +516,30 @@ def run(platform: str, keyword: str = "", limit: int = 20, **kw):
 
 
 if __name__ == "__main__":
-    # CLI 用法： python3 collectors.py amazon "laundry bag" 20
-    p = sys.argv[1] if len(sys.argv) > 1 else "amazon"
-    kw = sys.argv[2] if len(sys.argv) > 2 else "laundry bag"
-    n = int(sys.argv[3]) if len(sys.argv) > 3 else 10
-    for ev in run(p, kw, n):
-        if ev.get("_phase") == "item":
-            r = ev["record"]
-            print(f"  {r['id']:<14} {r['title'][:44]:<46} {str(r['price'])[:8]:<9} "
-                  f"图{r['image_count']} 五点{r['bullet_count']}")
-        else:
-            print("  ·", ev.get("message", ev))
+    # CLI 用法：
+    #   python3 collectors.py amazon "laundry bag" 20
+    #   python3 collectors.py --json amazon "laundry bag" 20      # JSON 行输出（给 web 用）
+    #   python3 collectors.py --json temu_api "" 40
+    argv = sys.argv[1:]
+    as_json = False
+    if argv and argv[0] == "--json":
+        as_json = True
+        argv = argv[1:]
+    p_ = argv[0] if len(argv) > 0 else "amazon"
+    kw = argv[1] if len(argv) > 1 else "laundry bag"
+    n = int(argv[2]) if len(argv) > 2 else 10
+    dl = "--no-images" not in argv
+
+    if as_json:
+        # 每行一个 JSON 事件，stdout 供 web_server 解析
+        for ev in run(p_, kw, n, download_images=dl):
+            sys.stdout.write(json.dumps(ev, ensure_ascii=False) + "\n")
+            sys.stdout.flush()
+    else:
+        for ev in run(p_, kw, n, download_images=dl):
+            if ev.get("_phase") == "item":
+                r = ev["record"]
+                print(f"  {r['id']:<14} {r['title'][:44]:<46} {str(r['price'])[:8]:<9} "
+                      f"图{r['image_count']} 五点{r['bullet_count']}")
+            else:
+                print("  ·", ev.get("message", ev))

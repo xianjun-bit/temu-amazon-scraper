@@ -234,9 +234,21 @@ function toast(m){ const t=$('#toast'); t.textContent=m; t.classList.add('on');
 
 function setPlatform(){
   const p = $('#platform').value, cfg = PLATFORMS[p];
-  $('#kw').disabled = !cfg.kw;
+  const kw = $('#kw');
+  const wasDisabled = kw.disabled;
+  kw.disabled = !cfg.kw;
+  // 切到不支持关键词的模式时，清掉已填的关键词，避免误解
+  if(!cfg.kw && !wasDisabled && kw.value.trim()){
+    kw.dataset.saved = kw.value;
+    kw.value = '';
+  } else if(cfg.kw && !kw.value.trim() && kw.dataset.saved){
+    kw.value = kw.dataset.saved;   // 切回来时恢复
+  }
+  if(!cfg.kw) kw.placeholder = '本模式不支持关键词（已忽略）';
+  else kw.placeholder = '例：laundry bag';
   $('#tk-wrap').style.display = p==='temu_apify' ? 'inline-flex':'none';
-  $('#mode-hint').textContent = cfg.hint + ' · ' + cfg.est;
+  $('#mode-hint').innerHTML = cfg.hint + ' · ' + cfg.est +
+    (cfg.kw ? '' : ' <b style="color:#d97706">⚠️ 关键词会被忽略</b>');
 }
 $('#platform').addEventListener('change', setPlatform);
 setPlatform();
@@ -256,6 +268,9 @@ $('#go').addEventListener('click', async ()=>{
   const platform=$('#platform').value, keyword=$('#kw').value.trim(),
         limit=parseInt($('#limit').value)||20, dl=$('#dlimg').checked, token=$('#token').value.trim();
   if(platform!=='temu_api' && !keyword){ toast('请输入关键词'); return; }
+  if(platform==='temu_api' && keyword){
+    toast('「Temu 免登录」不支持关键词搜索，已抓取首页推荐位');
+  }
   if(platform==='temu_apify' && !token){ toast('请填 Apify Token'); return; }
 
   $('#go').disabled=true; rows=[]; $('#tbody').innerHTML=''; $('#empty').style.display='none';

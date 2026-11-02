@@ -22,6 +22,7 @@ import csv
 import io
 import json
 import os
+import sys
 import time
 import uuid
 from pathlib import Path
@@ -77,18 +78,47 @@ async def _run_job(job: dict, req: JobReq):
     job["queue"] = queue
 
     def producer():
+        """用**子进程**跑采集器。
+
+        为什么不用线程：Playwright 的 sync API 只能在主线程跑，
+        放在 threading.Thread 里会报
+        `Connection closed while reading from the driver`。
+        子进程能让 Playwright 独占主线程，同时天然隔离崩溃。
+        """
+        import subprocess
+        cmd = [sys.executable, str(ROOT / "collectors.py"), "--json",
+               req.platform, req.keyword, str(req.limit)]
+        if not req.download_images:
+            cmd.append("--no-images")
+        env = {k: v for k, v in os.environ.items()
+               if k.lower() not in ("http_proxy", "https_proxy", "all_proxy")}
+        if req.platform == "temu_apify" and req.token:
+            env["APIFY_TOKEN"] = req.token
+
         try:
             job["status"] = "running"
-            gen = collectors.run(req.platform, req.keyword, req.limit,
-                                 download_images=req.download_images,
-                                 **({"token": req.token} if req.platform == "temu_apify" else {}))
-            for ev in gen:
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
+                                    stderr=subprocess.PIPE, text=True,
+                                    bufsize=1, env=env, cwd=str(ROOT))
+            job["_proc"] = proc
+            for line in proc.stdout:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    ev = json.loads(line)
+                except Exception:
+                    continue
                 loop.call_soon_threadsafe(queue.put_nowait, ev)
+            proc.wait()
+            if proc.returncode != 0 and job["status"] == "running":
+                err = (proc.stderr.read() or "")[-600:]
+                raise RuntimeError(f"采集进程退出（code {proc.returncode}）\n{err}")
         except Exception as e:
             job["status"] = "error"
-            job["error"] = str(e)[:400]
+            job["error"] = str(e)[:800]
             loop.call_soon_threadsafe(queue.put_nowait,
-                                      {"_phase": "error", "message": str(e)[:400]})
+                                      {"_phase": "error", "message": str(e)[:800]})
         finally:
             job["finished_at"] = time.time()
             if job["status"] == "running":
