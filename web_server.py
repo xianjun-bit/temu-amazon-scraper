@@ -49,6 +49,9 @@ class JobReq(BaseModel):
     limit: int = 20
     download_images: bool = True
     token: str = ""
+    proxy: str = ""                   # 住宅代理 http://user:pass@host:port
+    delay_min: str = ""               # 最小间隔（秒）
+    delay_max: str = ""               # 最大间隔（秒）
 
 
 def _new_job(req: JobReq) -> dict:
@@ -94,6 +97,12 @@ async def _run_job(job: dict, req: JobReq):
                if k.lower() not in ("http_proxy", "https_proxy", "all_proxy")}
         if req.platform == "temu_apify" and req.token:
             env["APIFY_TOKEN"] = req.token
+        if req.proxy:
+            env["TEMU_PROXY"] = req.proxy
+        if req.delay_min:
+            env["TEMU_DELAY_MIN"] = str(req.delay_min)
+        if req.delay_max:
+            env["TEMU_DELAY_MAX"] = str(req.delay_max)
 
         try:
             job["status"] = "running"

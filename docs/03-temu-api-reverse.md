@@ -517,3 +517,82 @@ while len(items) < limit and round_no < 12:
 实测：**100 个不重复商品，2 轮凑齐**（40 + 76 → 去重 100），图片 99 张。
 
 已集成进 `collectors.py` 的 `temu_api` 模式，界面上直接填数量即可（上限 12 轮 × 40 条 ≈ 480）。
+---
+
+## 【专题】Temu 登录 + 防封 IP（2026-11-02）
+
+### 登录后能拿到什么
+
+| 能力 | 免登录 | 登录后 |
+|---|---|---|
+| 关键词搜索 `poppy/v1/search` | ❌ 40001 | ✅ |
+| 商品详情 `poppy/v1/goods_detail` | ❌ 40001 | ✅ |
+| 五点描述 / 全部附图 / 销量 | ❌ | ✅ |
+| 首页推荐流 | ✅ | ✅ |
+
+**关键实测**：未登录时打开搜索页，页面卡在 `bgn_verification.html`，
+**前端 JS 根本不发 `/poppy/v1/search` 请求**（21 个 API 响应里没有它），
+其中 `/api/passport/token/touch` 返回 40001 —— 说明服务端在检查登录态，
+前端判断未登录后直接不请求数据。
+
+### 关键实现思路：拦截页面自己的响应
+
+不去猜参数、不去伪造 anti-token（native bridge 生成的，纯 JS 伪造不了），
+而是让**页面自己去发请求**，我们只在 `response` 事件里捞 JSON：
+
+```python
+page.on("response", on_resp)   # 只关心 /poppy/v1/search 和 /poppy/v1/goods_detail
+```
+
+好处：
+- 签名、cookie、referer、session 全由浏览器维护
+- 参数由页面自己决定（不用逆向猜）
+- 登录后立刻就能拿到完整数据
+
+实现见 `temu_browser.py`（`_Interceptor` 类）。
+
+### 登录态复用
+
+profile 目录持久化（默认 `.browser_profile/`），登录一次长期复用。
+
+**登录是风控权重最高的动作 —— 必须尽量少做。**
+换机器时把整个 profile 目录拷过去即可：
+
+```bash
+rsync -av .browser_profile/ other-pc:/path/to/temu_scraper/
+```
+
+### 防封 IP：六层防护
+
+| 层 | 措施 | 成本 |
+|---|---|---|
+| 1 | **控制频率**（随机延迟 1.5-30s 可配） | 免费 |
+| 2 | **住宅代理**（`TEMU_PROXY`） | 代理月费 |
+| 3 | 行为拟真（真实 Chrome / 滚动 / 随机等待） | 免费 |
+| 4 | 遇验证码停下人工过，不硬刚 | 免费 |
+| 5 | 错误码识别与降速（406008 立刻停） | 免费 |
+| 6 | 账号卫生（账号↔IP 绑定，不多 IP 乱跑） | 免费 |
+
+**实测数据点**：Amazon 一次跑 100 条就触发 `AmazonBlocked: 503` ——
+突发高频必被标记。Temu 同理。
+
+**代理轮换策略**：不要每个请求换 IP（更像机器人），
+建议一个 IP 连续用 20-30 条再换（sticky session），且账号固定 1-2 个 IP。
+
+### 环境变量
+
+```bash
+TEMU_PROFILE=/path/to/profile   # 登录态目录
+TEMU_PROXY=http://u:p@h:port    # 住宅代理
+TEMU_DELAY_MIN=2.5              # 最小间隔
+TEMU_DELAY_MAX=7                # 最大间隔
+```
+
+### 重要提醒
+
+**给账号不如用 Apify**：
+- Apify $0.01/条（80 条 $0.8），比住宅代理月费（$20-50）便宜
+- 不用登录、不用代理、不用操心风控
+- 账号被风控标记 = 账号废了，这个风险不该由你承担
+
+完整方案见项目根目录 `防封IP与登录方案.md`。

@@ -48,6 +48,8 @@
 
 > 📖 在线文档（Pages）：https://tom982346-ctrl.github.io/temu-amazon-scraper/
 
+> 📖 在线文档（Pages）：https://tom982346-ctrl.github.io/temu-amazon-scraper/
+
 ## 一、结论速览
 
 | 平台 | 关键词搜 80 个 | 五点描述 | 全部附图 | 价格/评分/销量 | 图片下载 | 结论 |

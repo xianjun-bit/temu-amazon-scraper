@@ -399,11 +399,21 @@ def scrape_temu_api(limit: int = 40, download_images: bool = True):
 # Temu · browser 模式（需登录/过验证码，抓全字段）
 # ══════════════════════════════════════════════════════════════
 def scrape_temu_browser(keyword: str, limit: int = 80, download_images: bool = True,
-                        headless: bool = False):
-    """Temu 浏览器模式：走真实页面，登录后抓关键词搜索结果 + 详情。逐条 yield。
+                        headless: bool = False, **kw):
+    """Temu 浏览器模式 v2（实现见 temu_browser.py）。
 
-    ⚠️ 需在有图形界面的机器上跑；headless=True 时遇验证码会跳过该商品。
+    - 登录态持久化复用（profile 存 .browser_profile）
+    - 拦截页面自己的 API 响应拿数据（自动带 anti-token 签名）
+    - 随机延迟 + 失败退避 + 住宅代理支持（防封）
     """
+    from temu_browser import scrape_temu_browser as _impl
+    return _impl(keyword, limit=limit, download_images=download_images,
+                 headless=headless, **kw)
+
+
+def _scrape_temu_browser_legacy(keyword: str, limit: int = 80, download_images: bool = True,
+                        headless: bool = False):
+    """旧版 DOM 抓取实现（保留备查）"""
     from playwright.sync_api import sync_playwright
     from curl_cffi import requests
 

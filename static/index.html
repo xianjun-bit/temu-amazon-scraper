@@ -169,6 +169,17 @@
       <label class="chk" id="tk-wrap" style="display:none">Apify Token
         <input type="password" id="token" placeholder="apify_xxx" style="width:200px;height:30px;font-size:12.5px">
       </label>
+      <label class="chk" id="px-wrap" style="display:none">住宅代理
+        <input type="text" id="proxy" placeholder="http://user:pass@host:port" style="width:230px;height:30px;font-size:12.5px">
+      </label>
+      <label class="chk" id="sp-wrap" style="display:none">速度
+        <select id="speed" style="height:30px;font-size:12.5px;width:130px">
+          <option value="fast">快（1.5-4s）</option>
+          <option value="normal" selected>标准（2.5-7s）</option>
+          <option value="slow">慢（5-14s）</option>
+          <option value="safe">极慢（15-30s）</option>
+        </select>
+      </label>
       <span class="hint" id="mode-hint"></span>
     </div>
   </div>
@@ -233,11 +244,22 @@ let jobId=null, es=null, rows=[];
 function toast(m){ const t=$('#toast'); t.textContent=m; t.classList.add('on');
   clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('on'),2600); }
 
+const SPEEDS = {
+  fast:   {min:'1.5', max:'4'},
+  normal: {min:'2.5', max:'7'},
+  slow:   {min:'5',   max:'14'},
+  safe:   {min:'15',  max:'30'},
+};
+
 function setPlatform(){
   const p = $('#platform').value, cfg = PLATFORMS[p];
   const kw = $('#kw');
   const wasDisabled = kw.disabled;
   kw.disabled = !cfg.kw;
+  // 只有 Temu 模式才需要代理/速度
+  const isTemu = p.startsWith('temu');
+  $('#px-wrap').style.display = isTemu ? 'inline-flex':'none';
+  $('#sp-wrap').style.display = isTemu ? 'inline-flex':'none';
   // 切到不支持关键词的模式时，清掉已填的关键词，避免误解
   if(!cfg.kw && !wasDisabled && kw.value.trim()){
     kw.dataset.saved = kw.value;
@@ -268,6 +290,8 @@ function addLog(t,msg){
 $('#go').addEventListener('click', async ()=>{
   const platform=$('#platform').value, keyword=$('#kw').value.trim(),
         limit=parseInt($('#limit').value)||20, dl=$('#dlimg').checked, token=$('#token').value.trim();
+  const proxy=$('#proxy').value.trim();
+  const sp=SPEEDS[$('#speed').value]||SPEEDS.normal;
   if(platform!=='temu_api' && !keyword){ toast('请输入关键词'); return; }
   if(platform==='temu_api' && keyword){
     toast('「Temu 免登录」不支持关键词搜索，已抓取首页推荐位');
@@ -281,7 +305,8 @@ $('#go').addEventListener('click', async ()=>{
 
   try{
     const r = await fetch('/api/jobs',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({platform,keyword,limit,download_images:dl,token})});
+      body:JSON.stringify({platform,keyword,limit,download_images:dl,token,
+                           proxy, delay_min:sp.min, delay_max:sp.max})});
     const txt = await r.text();
     let j = null;
     try { j = JSON.parse(txt); }
