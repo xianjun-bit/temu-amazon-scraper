@@ -266,9 +266,25 @@ $('#go').addEventListener('click', async ()=>{
   try{
     const r = await fetch('/api/jobs',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({platform,keyword,limit,download_images:dl,token})});
-    const j = await r.json();
+    const txt = await r.text();
+    let j = null;
+    try { j = JSON.parse(txt); }
+    catch(e){ throw new Error(
+      '后端未正确响应（HTTP '+r.status+'）。'+
+      (txt.slice(0,120)||'响应为空')+
+      ' —— 请确认已用 `python3 web_server.py` 启动服务，并直接打开 http://127.0.0.1:8899'); }
+    if(!j.id) throw new Error('后端返回异常: '+txt.slice(0,150));
     jobId=j.id; setStatus('','任务已创建，正在连接…',''); connect(jobId);
-  }catch(e){ setStatus('err','创建任务失败: '+e,' '); $('#go').disabled=false; }
+  }catch(e){
+    setStatus('err','❌ 创建任务失败');
+    $('#st-msg').innerHTML = '❌ 无法连接后端<div class="sub" style="margin-top:6px;line-height:1.7">'+
+      String(e.message||e).replace(/[<>]/g,'')+'</div>'+
+      '<div class="sub" style="margin-top:8px;line-height:1.8">'+
+      '① 在项目目录跑：<code>python3 web_server.py</code><br>'+
+      '② 浏览器打开：<code>http://127.0.0.1:8899</code><br>'+
+      '③ 若是 file:// 打开的 HTML，请改用上面的地址</div>';
+    $('#go').disabled=false;
+  }
 });
 
 function connect(id){
@@ -363,6 +379,22 @@ function addRow(r){
 
 $('#dcsv').addEventListener('click',()=>{ if(jobId) location.href='/api/jobs/'+jobId+'/download?fmt=csv'; });
 $('#djson').addEventListener('click',()=>{ if(jobId) location.href='/api/jobs/'+jobId+'/download?fmt=json'; });
+
+// 启动时探活：确认后端在
+(async () => {
+  try{
+    const r = await fetch('/api/jobs',{cache:'no-store'});
+    const txt = await r.text();
+    if(!txt.trim().startsWith('[')) throw new Error('not json');
+    $('#hint-top').innerHTML = '✅ 后端已连接 · Amazon 免登录可用 · Temu 关键词需登录';
+  }catch(e){
+    $('#hint-top').innerHTML = '⚠️ <b style="color:#dc2626">后端未连接</b> —— 请运行 <code>python3 web_server.py</code>';
+    setStatus('err','后端未连接');
+    $('#st-msg').innerHTML = '❌ 页面已打开，但后端服务没起来<div class="sub" style="margin-top:6px;line-height:1.8">'+
+      '在项目目录执行：<code>python3 web_server.py</code><br>'+
+      '然后访问 <code>http://127.0.0.1:8899</code>（不要用 file:// 打开 HTML）</div>';
+  }
+})();
 
 // 灯箱
 const lb=$('#lb');
