@@ -219,8 +219,9 @@ const $ = s => document.querySelector(s);
 const PLATFORMS = {
   amazon:      {hint:'Amazon 全字段：五点描述 / 全部附图 / 规格 / 变体 / 月销量 —— 免登录、免费',
                 kw:true,  est:'10 条 ≈ 65 秒，80 条 ≈ 5.5 分钟'},
-  temu_api:    {hint:'Temu 免登录模式：只能拿首页推荐位（标题/价格/主图），不支持关键词搜索',
-                kw:false, est:'约 30 秒出 40 条'},
+  temu_api:    {hint:'Temu 免登录：<b>没有搜索接口</b>（服务端返回 needLogin），只能抓推荐流。'+
+                        '多轮累积去重可拿到大量真实商品（标题/价格/主图），但与关键词无关',
+                kw:false, est:'40 条约 20 秒；累积到 100 条约 40 秒'},
   temu_browser:{hint:'Temu 浏览器模式：关键词搜索 + 全字段。需在有图形界面的机器跑，会弹出浏览器窗口，人工过一次登录/验证',
                 kw:true,  est:'需人工过验证，之后逐个抓取'},
   temu_apify:  {hint:'Temu Apify 模式：托管服务自带代理，关键词 + 全字段，无需本机登录。$0.01/条',

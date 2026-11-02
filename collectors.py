@@ -309,27 +309,56 @@ def scrape_temu_api(limit: int = 40, download_images: bool = True):
         page.goto(BASE + "/", wait_until="domcontentloaded", timeout=60000)
         page.wait_for_timeout(10000)
 
-        r = page.evaluate("""async () => {
+        # 累积抓取：这个接口每次返回的推荐商品都不同（实测重叠仅 1-8%），
+        # 多轮累积去重可以拿到远超单轮的量。
+        JS_FETCH = """async (b) => {
           const res = await fetch('/api/alexa/homepage/goods_list', {method:'POST',
             credentials:'include', headers:{'Content-Type':'application/json;charset=UTF-8'},
-            body: JSON.stringify({offset:0,count:120,list_id:'',opt_id:null,listId:'',
-                                  scene:'home',page_list_id:'',extend_fields:{}})});
+            body: JSON.stringify(b)});
           return {status: res.status, text: await res.text()};
-        }""")
-        try:
-            j = json.loads(r["text"])
-        except Exception:
-            raise RuntimeError(f"Temu API 返回异常: {str(r)[:200]}")
-
-        items = []
-        def walk(o):
-            if isinstance(o, dict):
-                if "goods_id" in o and "price_info" in o: items.append(o)
-                else:
-                    for v in o.values(): walk(v)
-            elif isinstance(o, list):
-                for v in o: walk(v)
-        walk(j)
+        }"""
+        items, seen_gid = [], set()
+        round_no = 0
+        while len(items) < limit and round_no < 12:
+            round_no += 1
+            body = {"offset": 0, "count": 120, "list_id": "", "opt_id": None,
+                    "listId": "", "scene": "home", "page_list_id": "",
+                    "extend_fields": {}, "page_sn": 10005, "page_el_sn": 200024}
+            if round_no > 1:
+                # 换 list_id 触发不同的推荐源
+                import hashlib as _h
+                seed = f"{os.getpid()}-{round_no}-{time.time()}"
+                h = _h.md5(seed.encode()).hexdigest()
+                body["list_id"] = h
+                body["listId"] = h
+            r = page.evaluate(JS_FETCH, body)
+            try:
+                j = json.loads(r["text"])
+            except Exception:
+                raise RuntimeError(f"Temu API 返回异常: {str(r)[:200]}")
+            batch = []
+            def walk(o):
+                if isinstance(o, dict):
+                    if "goods_id" in o and "price_info" in o: batch.append(o)
+                    else:
+                        for v in o.values(): walk(v)
+                elif isinstance(o, list):
+                    for v in o: walk(v)
+            walk(j)
+            added = 0
+            for it in batch:
+                gid = str(it.get("goods_id", ""))
+                if gid and gid not in seen_gid:
+                    seen_gid.add(gid); items.append(it); added += 1
+            if round_no == 1:
+                yield {"_phase": "search",
+                       "message": f"第 1 轮取到 {len(batch)} 个商品"}
+            if added == 0:
+                break
+            if len(items) < limit:
+                yield {"_phase": "progress",
+                       "message": f"已累积 {len(items)} 个商品（第 {round_no} 轮）",
+                       "current": len(items), "total": limit}
     finally:
         try: ctx.close()
         except Exception: pass

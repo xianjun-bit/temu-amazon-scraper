@@ -393,3 +393,127 @@ https://www.temu.com/<超长SEO标题>-g-601100218100590.html    ← 长 URL，�
 ```
 加上 `refer_page_sn=10032` / `refer_page_el_sn=207307` 等参数更稳。
 即使用短 URL，页面仍会触发 `obtain_captcha`（点选验证码），因为**详情数据要登录才能取**。
+
+---
+
+## 【专题】为什么 Temu 免登录只能拿到「推荐页」？（2026-11-02 完整验证）
+
+这是被问了好几次的问题，这里把**所有可能的绕过路径都试完了**，给出穷尽性结论。
+
+### 结论一句话
+
+**Temu 把「搜索 / 详情 / 筛选 / 推荐」四个能力全放在登录墙后面（`error_code=40001` needLogin），
+只留了「首页推荐流」一个端点给未登录用户。而推荐流的设计目标就是「给你看点什么」，
+不是「给你搜什么」——所以传任何关键词参数都没用。**
+
+### 全部端点实测表（浏览器内、带真实会话）
+
+| 端点 | HTTP | error_code | 能否用 |
+|---|---|---|---|
+| `/api/alexa/homepage/goods_list` | 200 | 1000000 | ✅ **唯一免登录** |
+| `/api/seo/homepage_rec_goods_list` | 403 | 40002 | ❌ 缺 anti-token 签名 |
+| `/api/poppy/v1/search` | 403 | **40001** | ❌ needLogin |
+| `/api/poppy/v1/goods_detail` | 403 | **40001** | ❌ needLogin |
+| `/api/poppy/v1/mall_home_recommend` | 403 | **40001** | ❌ needLogin |
+| `/api/poppy/v1/opt_list` | 403/200 | 40001 / 500 | ❌ |
+| `/api/promotion/open/recommend/promotion/goods/list` | 200 | — | ⚠️ 返回空（购物车场景） |
+
+### 证据一：端点名自己就写着「推荐」
+
+从 bundle（`1561_b110d62e3e0215246aee.js`）挖到：
+
+```js
+queryHomeGoodsList(e) {
+  let {isUseSeoApi: t, ...r} = e || {};
+  return this.postRisk({
+    url: t ? "/api/seo/homepage_rec_goods_list" : "/api/alexa/homepage/goods_list",
+    params: r, format: a, config: {useRawResponse: !0}
+  })
+}
+```
+
+`homepage_rec_goods_list` —— **rec = recommendation**。
+同一 bundle 里的变量名也全是 rec：`this.recGoodsList` / `getRecGoodsList()` /
+`isRecGoodsRequesting` / `reloadRecGoodsList()`。
+
+**这个接口的语义就是「首页推荐位」，不是搜索。**
+
+### 证据二：传关键词参数 → 内容变了，但与关键词无关
+
+同一浏览器会话，连续调用同一接口：
+
+| 调用 | 商品数 | 与基线重叠 | 标题含 `laundry`/`bag` |
+|---|---|---|---|
+| 基线（无关键词参数） | 40 | — | 1/40 |
+| `extend_fields.search_key='laundry bag'` | 40 | 7/40 | **0/40** |
+| 顶层 `keyword='laundry bag'` | 40 | 2/40 | 1/40 |
+| `scene='search'` | 40 | 7/40 | 1/40 |
+
+⇒ 参数**会**改变返回内容（个性化轮换），但**没有一条与关键词相关**。
+说明 `search_key`/`keyword`/`scene` 这些字段在该端点上**无语义**，只是扰动了推荐流。
+
+### 证据三：`opt_id` / `list_id` 也不是搜索入口
+
+```
+opt_id=None    → 40 条，与其它组合重叠仅 1%
+opt_id=1       → 40 条，与 opt_id=2/3/10007/20016/30032 内容完全相同
+```
+说明：`opt_id` **传任意非空值都会走另一个推荐分支**，但具体值无效（走默认）。
+真实首页请求的参数是：
+```json
+{"offset":0,"count":120,
+ "list_id":"0029b340b4384b3c93898c7629b93332",   // 32位 hash，首页推荐位标识
+ "listId":"0029b340b4384b3c93898c7629b93332",
+ "scene":"home",
+ "page_list_id":"cca57035becc48919fa63840059f0fc3",
+ "extend_fields":{},
+ "page_el_sn":200024,"page_sn":10005}
+```
+用真实 hash / 随机 hash / 换 page_sn 各种组合实测，**两两重叠率都是 1-8%** ——
+无论怎么拼，返回的都是随机推荐，没有一组与关键词相关。
+
+### 证据四：类目页也不行
+
+```
+/category-shoes.html        200  len=378074  rawData=True
+/category-home-supplies.html 200  len=378103  rawData=True
+/c-10007.html               200  len=378074  rawData=True
+```
+三个不同类目 URL **返回几乎相同长度的页面**（SEO 兜底到首页），
+且 `optList`/`optId`/`categoryId` 在 SSR 里**出现 0 次**（类目数据全是客户端运行时加载）。
+
+### 证据五：搜索页 SSR 里没有搜索结果
+
+搜索页 HTML 368KB，`window.rawData` 存在，但：
+- `optList` 出现 **0** 次
+- `optId` 出现 **0** 次
+- `categoryId` 出现 **0** 次
+- `goodsList` 为空数组
+
+搜索结果必须由前端运行时调 `/api/poppy/v1/search` 拉 —— 而那个要登录。
+
+### 所以怎么办
+
+| 想要 | 方案 | 成本 |
+|---|---|---|
+| Temu 关键词搜索 + 详情 | Apify actor | $0.01/条 |
+| Temu 关键词搜索 + 详情 | 本机浏览器模式，人工过一次登录 | 免费 |
+| 只要**大量真实商品**（不按关键词） | **免登录累积模式**（见下） | 免费 |
+| Amazon 关键词 + 全字段 | 直接用 Amazon 模式 | 免费 |
+
+### 增量：免登录累积模式（本次新增）
+
+既然每次调用返回的推荐都不同（重叠仅 1-8%），**多轮累积去重就能拿到远超单轮的量**：
+
+```python
+while len(items) < limit and round_no < 12:
+    body = {...}
+    if round_no > 1:
+        body["list_id"] = md5(f"{pid}-{round}-{time}")   # 换推荐源
+        body["listId"]  = 同一个 hash
+    ...累积去重...
+```
+
+实测：**100 个不重复商品，2 轮凑齐**（40 + 76 → 去重 100），图片 99 张。
+
+已集成进 `collectors.py` 的 `temu_api` 模式，界面上直接填数量即可（上限 12 轮 × 40 条 ≈ 480）。
