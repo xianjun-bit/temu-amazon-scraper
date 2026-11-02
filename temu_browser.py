@@ -261,6 +261,8 @@ def scrape_temu_browser(keyword: str, limit: int = 80, download_images: bool = T
         ic = _Interceptor()
         ic.attach(page)
 
+        # 搜索页入口参数（来自 GitHub 上可用的实现 772vjrvj/pythoncrawling + 实测）
+        # search_method 用 "shade"（浏览器默认）；search API 的 body 里用 "user"
         Q = (f"search_key={keyword.replace(' ', '%20')}&search_method=shade"
              f"&refer_page_el_sn=200010&srch_enter_source=top_search_entrance_10005"
              f"&refer_page_name=home&refer_page_sn=10005&filter_items=1%3A1")
@@ -310,10 +312,57 @@ def scrape_temu_browser(keyword: str, limit: int = 80, download_images: bool = T
                 continue
             break
 
-        # 等 search 响应
+        # 等 search 响应（页面自己发）
         deadline = time.time() + 40
         while time.time() < deadline and not ic.search_hits:
             page.wait_for_timeout(1200)
+
+        # ── 备用：页面没发 search 时，用正确参数自己发一次 ──
+        # 参数来自 GitHub 可用实现（772vjrvj/pythoncrawling）：
+        #   searchMethod="user"（不是 shade）、disableCorrect=False、filterItems=""
+        # 注意：anti-content 与 body 绑定，自己发必须带页面当前的签名头，
+        #       否则返回 40002。
+        if not ic.search_hits:
+            list_id = ""
+            try:
+                lst = page.evaluate("() => (window.rawData?.store?.listId) || ''")
+                list_id = lst or ""
+            except Exception:
+                pass
+            body = {"scene": "search", "pageSn": 10009, "offset": 0,
+                    "listId": list_id or "a" * 32, "pageSize": 120,
+                    "query": keyword, "filterItems": "",
+                    "searchMethod": "user", "disableCorrect": False}
+            yield {"_phase": "progress",
+                   "message": "页面未发出搜索请求，尝试直接调用 search 接口…"}
+            try:
+                r = page.evaluate("""async (b) => {
+                  try {
+                    const res = await fetch('/api/poppy/v1/search?scene=search', {
+                      method:'POST', credentials:'include',
+                      headers:{'Content-Type':'application/json;charset=UTF-8',
+                               'Accept':'application/json, text/plain, */*'},
+                      body: JSON.stringify(b)});
+                    const t = await res.text();
+                    let code=null, gl=[];
+                    try { const j=JSON.parse(t); code=j.error_code;
+                          gl=((j.result||{}).data||{}).goodsList||[]; } catch(e){}
+                    return {status:res.status, code:code, goods:gl, head:t.slice(0,140)};
+                  } catch(e){ return {err:String(e)}; }
+                }""", body)
+                if r.get("goods"):
+                    ic.search_hits.append({"goods": r["goods"], "has_more": True})
+                    yield {"_phase": "search",
+                           "message": f"直接调用成功，取到 {len(r['goods'])} 个商品"}
+                else:
+                    code = r.get("code")
+                    hint = {40001: "需要登录（用 temu_login.py 登录一次）",
+                            40002: "缺 anti-content 签名",
+                            406008: "IP 被风控"}.get(code, f"错误码 {code}")
+                    yield {"_phase": "progress",
+                           "message": f"直接调用失败：{hint}"}
+            except Exception as e:
+                yield {"_phase": "progress", "message": f"直接调用异常：{str(e)[:80]}"}
 
         # ── 累积搜索结果（滚动触发分页）──────────────────────
         goods, seen = [], set()
