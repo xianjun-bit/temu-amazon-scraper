@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<title>选品数据采集控制台</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --card:#fff; --line:#e3e6ea; --line2:#eef0f3;
+    --tx:#1c2024; --tx2:#5b6572; --tx3:#8b95a1;
+    --pri:#2563eb; --pri-d:#1d4ed8; --pri-l:#eff4ff;
+    --ok:#0f9d58; --ok-l:#e8f5ee; --warn:#d97706; --warn-l:#fef3e2;
+    --err:#dc2626; --err-l:#fdecec;
+    --r:10px; --sh:0 1px 3px rgba(16,24,40,.06),0 1px 2px rgba(16,24,40,.04);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font:14px/1.55 -apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",Arial,sans-serif;
+       background:var(--bg);color:var(--tx);-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1280px;margin:0 auto;padding:24px 20px 60px}
+
+  header{display:flex;align-items:baseline;gap:12px;margin-bottom:20px;flex-wrap:wrap}
+  header h1{font-size:20px;font-weight:650;letter-spacing:-.01em}
+  header .sub{color:var(--tx3);font-size:13px}
+  header .spacer{flex:1}
+
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--sh)}
+  .pad{padding:18px}
+
+  /* ── 表单 ── */
+  .form{display:grid;grid-template-columns:1.4fr 1fr 1fr auto;gap:14px;align-items:end}
+  .fld{display:flex;flex-direction:column;gap:6px;min-width:0}
+  .fld label{font-size:12px;font-weight:600;color:var(--tx2);letter-spacing:.01em}
+  input[type=text],input[type=number],input[type=password],select{
+    height:38px;padding:0 11px;border:1px solid var(--line);border-radius:8px;
+    font:inherit;font-size:14px;background:#fff;color:var(--tx);outline:none;width:100%;
+    transition:border-color .15s,box-shadow .15s}
+  input:focus,select:focus{border-color:var(--pri);box-shadow:0 0 0 3px rgba(37,99,235,.1)}
+  select{appearance:none;cursor:pointer;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath fill='%238b95a1' d='M0 0l5 6 5-6z'/%3E%3C/svg%3E");
+    background-repeat:no-repeat;background-position:right 11px center;padding-right:30px}
+  .btn{height:38px;padding:0 20px;border:none;border-radius:8px;font:inherit;font-size:14px;
+       font-weight:600;cursor:pointer;white-space:nowrap;transition:.15s;
+       display:inline-flex;align-items:center;gap:7px}
+  .btn-pri{background:var(--pri);color:#fff}
+  .btn-pri:hover:not(:disabled){background:var(--pri-d)}
+  .btn-ghost{background:#fff;color:var(--tx2);border:1px solid var(--line)}
+  .btn-ghost:hover:not(:disabled){background:#f8f9fa;color:var(--tx)}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+
+  .opts{display:flex;gap:18px;flex-wrap:wrap;margin-top:14px;padding-top:14px;
+        border-top:1px solid var(--line2)}
+  .chk{display:inline-flex;align-items:center;gap:7px;font-size:13px;color:var(--tx2);cursor:pointer}
+  .chk input{width:15px;height:15px;accent-color:var(--pri);cursor:pointer}
+  .hint{font-size:12px;color:var(--tx3);margin-top:4px}
+
+  /* ── 状态条 ── */
+  .status{margin-top:16px;padding:14px 16px;border-radius:9px;background:var(--pri-l);
+          border:1px solid #dbe6ff;display:none}
+  .status.on{display:block}
+  .status.err{background:var(--err-l);border-color:#f8cfcf}
+  .status.ok{background:var(--ok-l);border-color:#c9e6d6}
+  .status.warn{background:var(--warn-l);border-color:#f5dcb4}
+  .st-top{display:flex;align-items:center;gap:10px;font-size:13px;margin-bottom:9px}
+  .st-top .msg{font-weight:600;color:var(--tx)}
+  .st-top .spacer{flex:1}
+  .bar{height:6px;background:#dbe4f5;border-radius:99px;overflow:hidden}
+  .bar i{display:block;height:100%;background:var(--pri);border-radius:99px;transition:width .35s ease}
+  .status.err .bar i{background:var(--err)}
+  .status.ok .bar i{background:var(--ok)}
+  .cnt{font-variant-numeric:tabular-nums;color:var(--tx2);font-size:12px}
+
+  /* ── 日志 ── */
+  .log{margin-top:11px;max-height:132px;overflow:auto;font:12px/1.65 ui-monospace,SFMono-Regular,Menlo,monospace;
+       color:var(--tx2);background:#fafbfc;border:1px solid var(--line2);border-radius:7px;padding:9px 11px}
+  .log div{white-space:pre-wrap;word-break:break-all}
+  .log .t{color:var(--tx3);margin-right:7px}
+
+  /* ── 工具条 ── */
+  .tools{display:flex;align-items:center;gap:10px;margin:20px 0 12px;flex-wrap:wrap}
+  .tools h2{font-size:15px;font-weight:650}
+  .tools .spacer{flex:1}
+  .tools .meta{font-size:12.5px;color:var(--tx3)}
+
+  /* ── 表格 ── */
+  .tblwrap{border:1px solid var(--line);border-radius:var(--r);overflow:hidden;background:#fff}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{background:#fafbfc;text-align:left;padding:9px 12px;font-weight:600;font-size:12px;
+     color:var(--tx2);border-bottom:1px solid var(--line);white-space:nowrap;
+     position:sticky;top:0;z-index:2}
+  td{padding:10px 12px;border-bottom:1px solid var(--line2);vertical-align:top}
+  tr:last-child td{border-bottom:none}
+  tbody tr:hover{background:#fafbfd}
+  .thumb{width:52px;height:52px;object-fit:cover;border-radius:6px;border:1px solid var(--line);
+         background:#f2f3f5;display:block;cursor:zoom-in}
+  .ttl{font-weight:550;color:var(--tx);margin-bottom:3px}
+  .ttl a{color:inherit;text-decoration:none}
+  .ttl a:hover{color:var(--pri);text-decoration:underline}
+  .sub{font-size:12px;color:var(--tx3)}
+  .num{font-variant-numeric:tabular-nums;white-space:nowrap}
+  .pill{display:inline-block;padding:1px 7px;border-radius:5px;font-size:11.5px;font-weight:600;
+        background:#f1f3f5;color:var(--tx2)}
+  .pill.ok{background:var(--ok-l);color:var(--ok)}
+  .pill.warn{background:var(--warn-l);color:var(--warn)}
+  .pill.err{background:var(--err-l);color:var(--err)}
+  .stars{color:#eab308;font-size:12px}
+  .expand{cursor:pointer;color:var(--pri);font-size:12px;user-select:none;white-space:nowrap}
+  .detail{display:none;background:#fafbfc}
+  .detail.open{display:table-row}
+  .detail td{padding:14px 16px}
+  .bul{margin:0;padding-left:18px;font-size:12.5px;color:var(--tx2);line-height:1.75}
+  .bul li{margin-bottom:3px}
+  .imgs{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+  .imgs img{width:62px;height:62px;object-fit:cover;border-radius:5px;border:1px solid var(--line);cursor:zoom-in}
+  .specs{margin-top:10px;font-size:12px;color:var(--tx2);display:flex;gap:8px;flex-wrap:wrap}
+  .specs span{background:#eef1f4;padding:2px 8px;border-radius:5px}
+  .empty{padding:44px 20px;text-align:center;color:var(--tx3);font-size:13.5px}
+  .err-txt{color:var(--err);font-size:12px}
+
+  /* ── 灯箱 ── */
+  .lb{position:fixed;inset:0;background:rgba(12,16,22,.86);display:none;
+      align-items:center;justify-content:center;z-index:99;padding:36px;cursor:zoom-out}
+  .lb.on{display:flex}
+  .lb img{max-width:100%;max-height:100%;object-fit:contain;border-radius:8px}
+  .lb .close{position:absolute;top:18px;right:22px;color:#fff;font-size:30px;
+             cursor:pointer;line-height:1;opacity:.85}
+  .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1c2024;
+         color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;z-index:100;opacity:0;
+         transition:opacity .25s;pointer-events:none}
+  .toast.on{opacity:.96}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>🛒 选品数据采集控制台</h1>
+    <span class="sub">输入关键词 · 实时抓取 · 一键导出</span>
+    <span class="spacer"></span>
+    <span class="sub" id="hint-top">Amazon 免登录可用 · Temu 关键词需登录</span>
+  </header>
+
+  <!-- 表单 -->
+  <div class="card pad">
+    <div class="form">
+      <div class="fld">
+        <label>关键词</label>
+        <input type="text" id="kw" placeholder="例：laundry bag" value="laundry bag" autocomplete="off">
+      </div>
+      <div class="fld">
+        <label>平台 / 模式</label>
+        <select id="platform">
+          <option value="amazon">Amazon（免登录 · 全字段）</option>
+          <option value="temu_api">Temu · 免登录（首页推荐位）</option>
+          <option value="temu_browser">Temu · 浏览器（需登录·全字段）</option>
+          <option value="temu_apify">Temu · Apify（需 token·全字段）</option>
+        </select>
+      </div>
+      <div class="fld">
+        <label>抓取数量</label>
+        <input type="number" id="limit" value="20" min="1" max="300">
+      </div>
+      <div class="fld">
+        <button class="btn btn-pri" id="go">▶ 开始抓取</button>
+      </div>
+    </div>
+
+    <div class="opts">
+      <label class="chk"><input type="checkbox" id="dlimg" checked> 下载图片</label>
+      <label class="chk" id="tk-wrap" style="display:none">Apify Token
+        <input type="password" id="token" placeholder="apify_xxx" style="width:200px;height:30px;font-size:12.5px">
+      </label>
+      <span class="hint" id="mode-hint"></span>
+    </div>
+  </div>
+
+  <!-- 状态 -->
+  <div class="status" id="status">
+    <div class="st-top">
+      <span class="msg" id="st-msg">准备中…</span>
+      <span class="spacer"></span>
+      <span class="cnt" id="st-cnt"></span>
+    </div>
+    <div class="bar"><i id="st-bar" style="width:0%"></i></div>
+    <div class="log" id="log"></div>
+  </div>
+
+  <!-- 工具条 -->
+  <div class="tools">
+    <h2>抓取结果</h2>
+    <span class="meta" id="rcount"></span>
+    <span class="spacer"></span>
+    <button class="btn btn-ghost" id="dcsv" disabled>↓ 导出 CSV</button>
+    <button class="btn btn-ghost" id="djson" disabled>↓ 导出 JSON</button>
+  </div>
+
+  <div class="tblwrap">
+    <table>
+      <thead><tr>
+        <th style="width:66px">主图</th>
+        <th>商品</th>
+        <th style="width:74px">价格</th>
+        <th style="width:82px">评分</th>
+        <th style="width:72px">月销</th>
+        <th style="width:58px">附图</th>
+        <th style="width:58px">五点</th>
+        <th style="width:88px">操作</th>
+      </tr></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+    <div class="empty" id="empty">还没有数据 —— 输入关键词点「开始抓取」</div>
+  </div>
+</div>
+
+<div class="lb" id="lb"><span class="close">×</span><img id="lbimg" alt=""></div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const PLATFORMS = {
+  amazon:      {hint:'Amazon 全字段：五点描述 / 全部附图 / 规格 / 变体 / 月销量 —— 免登录、免费',
+                kw:true,  est:'10 条 ≈ 65 秒，80 条 ≈ 5.5 分钟'},
+  temu_api:    {hint:'Temu 免登录模式：只能拿首页推荐位（标题/价格/主图），不支持关键词搜索',
+                kw:false, est:'约 30 秒出 40 条'},
+  temu_browser:{hint:'Temu 浏览器模式：关键词搜索 + 全字段。需在有图形界面的机器跑，会弹出浏览器窗口，人工过一次登录/验证',
+                kw:true,  est:'需人工过验证，之后逐个抓取'},
+  temu_apify:  {hint:'Temu Apify 模式：托管服务自带代理，关键词 + 全字段，无需本机登录。$0.01/条',
+                kw:true,  est:'80 条 ≈ $0.8，约 1-3 分钟'},
+};
+
+let jobId=null, es=null, rows=[];
+
+function toast(m){ const t=$('#toast'); t.textContent=m; t.classList.add('on');
+  clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('on'),2600); }
+
+function setPlatform(){
+  const p = $('#platform').value, cfg = PLATFORMS[p];
+  $('#kw').disabled = !cfg.kw;
+  $('#tk-wrap').style.display = p==='temu_apify' ? 'inline-flex':'none';
+  $('#mode-hint').textContent = cfg.hint + ' · ' + cfg.est;
+}
+$('#platform').addEventListener('change', setPlatform);
+setPlatform();
+
+function setStatus(cls, msg, cnt){
+  const s=$('#status'); s.className='status on'+(cls?' '+cls:'');
+  $('#st-msg').textContent=msg||'';
+  $('#st-cnt').textContent=cnt||'';
+}
+function addLog(t,msg){
+  const el=$('#log'); const d=document.createElement('div');
+  d.innerHTML='<span class="t">'+t+'</span>'+msg.replace(/[<>]/g,c=>({'<':'&lt;','>':'&gt;'}[c]));
+  el.appendChild(d); el.scrollTop=el.scrollHeight;
+}
+
+$('#go').addEventListener('click', async ()=>{
+  const platform=$('#platform').value, keyword=$('#kw').value.trim(),
+        limit=parseInt($('#limit').value)||20, dl=$('#dlimg').checked, token=$('#token').value.trim();
+  if(platform!=='temu_api' && !keyword){ toast('请输入关键词'); return; }
+  if(platform==='temu_apify' && !token){ toast('请填 Apify Token'); return; }
+
+  $('#go').disabled=true; rows=[]; $('#tbody').innerHTML=''; $('#empty').style.display='none';
+  $('#log').innerHTML=''; $('#dcsv').disabled=true; $('#djson').disabled=true;
+  $('#rcount').textContent='';
+  setStatus('', '正在创建任务…', '');
+
+  try{
+    const r = await fetch('/api/jobs',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({platform,keyword,limit,download_images:dl,token})});
+    const j = await r.json();
+    jobId=j.id; setStatus('','任务已创建，正在连接…',''); connect(jobId);
+  }catch(e){ setStatus('err','创建任务失败: '+e,' '); $('#go').disabled=false; }
+});
+
+function connect(id){
+  if(es) es.close();
+  es = new EventSource('/api/jobs/'+id+'/stream');
+  es.onmessage = ev => {
+    const d = JSON.parse(ev.data);
+    if(d.type==='snapshot'){ applyJob(d.job); }
+    else if(d.type==='status'){ applyJob(d.job); }
+    else if(d.type==='item'){ addRow(d.record); }
+    else if(d.type==='end'){ applyJob(d.job); es.close(); es=null; $('#go').disabled=false; }
+  };
+  es.onerror = ()=>{ if(es){ es.close(); es=null; } $('#go').disabled=false; };
+}
+
+function applyJob(j){
+  if(!j) return;
+  const pct = j.total ? Math.min(100, Math.round(j.count/j.total*100)) : (j.status==='done'?100:8);
+  $('#st-bar').style.width = pct+'%';
+  const cnt = j.count + (j.total? ' / '+j.total : '');
+  let cls='';
+  if(j.status==='done') cls='ok'; else if(j.status==='error') cls='err';
+  else if(j.need_login) cls='warn';
+  setStatus(cls, j.status==='error' ? ('❌ '+j.error) : (j.message||j.phase||''), cnt);
+  if(j.status==='error' && j.error){
+    // 常见错误给可读提示
+    const e = j.error;
+    let tip = '';
+    if(/AmazonBlocked|503/.test(e)) tip = 'Amazon 临时限流了 —— 等 3-5 分钟再试，或把数量调小';
+    else if(/Apify/.test(e)) tip = 'Apify 调用失败 —— 检查 Token 是否正确、是否有额度';
+    else if(/需要登录|登录态/.test(e)) tip = 'Temu 需要登录 —— 用「浏览器模式」在本机跑一次，或用 Apify 模式';
+    else if(/verifyAuthToken|验证码/.test(e)) tip = '触发风控验证码 —— 住宅代理或 Apify 模式可避免';
+    if(tip) $('#st-msg').innerHTML = '❌ '+tip+'<div class="sub" style="margin-top:4px">'+e.replace(/[<>]/g,'')+'</div>';
+  }
+  if(j.log) { const el=$('#log'); if(el.childElementCount<j.log.length){ el.innerHTML='';
+      j.log.forEach(x=>{const d=document.createElement('div');
+        d.innerHTML='<span class="t">'+x.t+'</span>'+x.msg.replace(/[<>]/g,c=>({'<':'&lt;','>':'&gt;'}[c]));
+        el.appendChild(d);}); el.scrollTop=el.scrollHeight; } }
+  if(j.count){ $('#rcount').textContent = j.count+' 条'; $('#dcsv').disabled=false; $('#djson').disabled=false; }
+}
+
+function localImg(r, idx){
+  // 优先本地文件（避免远程防盗链），失败自动回落远程
+  const i = idx||0;
+  const local = (r.local_images||[])[i];
+  const remote = (r.images||[])[i];
+  if(local) return '/img/'+r.platform+'/'+encodeURIComponent(r.id||'x')+'/'+local;
+  return remote || '';
+}
+
+function addRow(r){
+  rows.push(r);
+  const tb=$('#tbody');
+  const img = localImg(r,0);
+  const stars = r.rating ? '★'+r.rating+(r.review_count?' ('+r.review_count+')':'') : '—';
+  const err = r.error ? ' <span class="pill err">'+r.error+'</span>' : '';
+  const tr = document.createElement('tr');
+  tr.innerHTML =
+    '<td>'+(img?'<img class="thumb" src="'+img+'" loading="lazy" alt="" onerror="this.onerror=null;this.src=\''+(r.images&&r.images[0]||'')+'\'">':'<div class="thumb"></div>')+'</td>'+
+    '<td><div class="ttl">'+(r.url?'<a href="'+r.url+'" target="_blank" rel="noopener">':'')+
+      (r.title||'(无标题)')+(r.url?'</a>':'')+'</div>'+
+      '<div class="sub">'+[r.brand,r.seller].filter(Boolean).join(' · ')+err+'</div></td>'+
+    '<td class="num">'+(r.price!=null?(r.currency==='USD'?'$':'')+r.price:'—')+'</td>'+
+    '<td class="num"><span class="stars">'+stars+'</span></td>'+
+    '<td class="num">'+(r.sold!=null?r.sold:'—')+'</td>'+
+    '<td class="num"><span class="pill'+(r.image_count>1?' ok':'')+'">'+r.image_count+'</span></td>'+
+    '<td class="num"><span class="pill'+(r.bullet_count>0?' ok':'')+'">'+r.bullet_count+'</span></td>'+
+    '<td><span class="expand">详情 ▾</span></td>';
+  tb.appendChild(tr);
+
+  const dtr = document.createElement('tr');
+  dtr.className='detail';
+  const bl = (r.bullets||[]).map(b=>'<li>'+String(b).replace(/[<>]/g,c=>({'<':'&lt;','>':'&gt;'}[c]))+'</li>').join('');
+  const sp = Object.entries(r.specs||{}).slice(0,10).map(([k,v])=>'<span>'+k+': '+v+'</span>').join('');
+  const ig = (r.images||[]).slice(0,12).map((u,i)=>'<img src="'+localImg(r,i)+'" loading="lazy" alt="">').join('');
+  dtr.innerHTML='<td colspan="8">'+
+    (bl?'<div style="font-size:12px;font-weight:600;color:#5b6572;margin-bottom:6px">五点描述</div><ul class="bul">'+bl+'</ul>':'')+
+    (sp?'<div class="specs">'+sp+'</div>':'')+
+    (ig?'<div class="imgs">'+ig+'</div>':'')+
+    (r.url?'<div class="sub" style="margin-top:10px"><a href="'+r.url+'" target="_blank" rel="noopener">'+r.url+'</a></div>':'')+
+    '</td>';
+  tb.appendChild(dtr);
+
+  tr.querySelector('.expand').addEventListener('click',()=>{
+    dtr.classList.toggle('open');
+    tr.querySelector('.expand').textContent = dtr.classList.contains('open')?'详情 ▴':'详情 ▾';
+  });
+  $('#empty').style.display='none';
+  $('#rcount').textContent=rows.length+' 条';
+  $('#dcsv').disabled=false; $('#djson').disabled=false;
+}
+
+$('#dcsv').addEventListener('click',()=>{ if(jobId) location.href='/api/jobs/'+jobId+'/download?fmt=csv'; });
+$('#djson').addEventListener('click',()=>{ if(jobId) location.href='/api/jobs/'+jobId+'/download?fmt=json'; });
+
+// 灯箱
+const lb=$('#lb');
+document.addEventListener('click',e=>{ if(e.target.classList&&e.target.classList.contains('thumb')){
+  lb.classList.add('on'); $('#lbimg').src=e.target.src; } });
+document.querySelectorAll('.imgs img').forEach(()=>{});
+document.addEventListener('click',e=>{ if(e.target.parentElement&&e.target.parentElement.classList.contains('imgs')){
+  lb.classList.add('on'); $('#lbimg').src=e.target.src; } });
+lb.addEventListener('click',()=>lb.classList.remove('on'));
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') lb.classList.remove('on'); });
+</script>
+</body>
+</html>

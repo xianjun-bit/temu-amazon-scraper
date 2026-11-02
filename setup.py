@@ -51,6 +51,7 @@ def setup():
     req = ROOT / "requirements.txt"
     if req.exists():
         run(f"{ROOT / '.venv' / 'bin' / 'pip'} install -q -r {req}")
+    print("  ✓ 含 fastapi/uvicorn（可视化控制台用）")
 
     print("=== 2. Playwright（仅 Temu browser 模式需要）===")
     if (ROOT / ".venv").exists():

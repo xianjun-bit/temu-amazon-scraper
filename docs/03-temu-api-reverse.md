@@ -305,3 +305,91 @@ result = page.evaluate("""async (body) => {
 2. fetch 必须在**页面上下文**里（`page.evaluate`），不能是 Node 侧的 HTTP 请求
 3. `credentials:'include'` 或 `'omit'` 都行（服务端不看 cookie）
 4. 首页 `bgn_verification` 跳转是**正常流程**，不是被拦 —— 页面自动带上 verifyCode 通过
+
+---
+
+## 【专题】Temu 搜索/详情接口的登录墙（2026-11-02 逆向结论）
+
+从 JS bundle 里挖出了 Temu 搜索和商品详情的**真实端点与参数**，
+并用错误码对照确认了「能不能免登录调用」。
+
+### 挖到的端点
+
+**搜索**（`8226_*.js` / `6304_*.js`）：
+```js
+class au extends k.dD {
+  search(e, t) {
+    let a = e?.scene || eb.qr.SEARCH;
+    let r = (0, ac.w)("/api/poppy/v1/search", {scene: a});
+    return this.postRisk({url: r, params: {scene: a, pageSn: 10009, ...e}, ...});
+  }
+}
+```
+- 端点：`POST /api/poppy/v1/search`
+- 参数：`{scene, pageSn:10009, offset, pageSize, listId, query, ...}`
+- 响应：`result.data.goodsList[]`（字段是 camelCase：`goodsId` / `goodsName` / `thumbUrl` / `priceInfo{priceStr,currency}` / `salesTip` / `skuList` / `linkUrl` / `optId`）
+
+**商品详情**（`2027_*.js` / `goods_*.js`）：
+```js
+{scene:"goods_detail_like", url:"/api/poppy/v1/goods_detail",
+ apiParams:{pageSn:10032, pageElSn:207307, mainGoodsIds:[goodsId]}, mainGoodsId: goodsId}
+
+// 另一个调用点
+this.postRiskNew({url:"/api/poppy/v1/goods_detail", params: e})
+```
+- 端点：`POST /api/poppy/v1/goods_detail`
+- 参数：`{pageSn:10032, pageElSn:207307, mainGoodsIds:[gid], mainGoodsId: gid, scene}`
+- 响应：`result.data.goodsList[]` + `result.data.mainGoodsList[]` + `title` + `optList`
+
+**其它已挖到的 poppy 端点**：
+```
+/api/poppy/v1/opt_list
+/api/poppy/v1/title_bar_list
+/api/poppy/v1/search_suggest
+/api/poppy/v1/search_hot_query
+/api/poppy/v2/search_activation
+/api/poppy/v1/static/opt_list_all/en/100
+```
+
+### 错误码对照实验（决定性）
+
+在**浏览器上下文**里逐个调接口（带真实 cookie / 真实会话）：
+
+| 端点 | HTTP | error_code | 结果 |
+|---|---|---|---|
+| `/api/alexa/homepage/goods_list` | 200 | 1000000 | ✅ **免登录**，返回真实商品 |
+| `/api/poppy/v1/search` scene=search | 403 | **40001** | 🔒 needLogin |
+| `/api/poppy/v1/goods_detail` | 403 | **40001** | 🔒 needLogin |
+| `/api/poppy/v1/search` scene=xxx（错 scene） | 200 | 403 "request illegal" | 参数非法（路径对） |
+| `/api/poppy/v1/opt_list` | 200 | 403 "request illegal" | 参数非法 |
+| `/api/poppy/v1/title_bar_list` | 200 | 403 "request illegal" | 参数非法 |
+
+**关键区分**：
+- `40001` = **needLogin** → 端点识别了、参数大致对，但**要求登录**
+- `403 request illegal` = 参数错误（可试出来）
+- `40002` = 缺 anti-token 签名
+- `406008` = IP 风控
+
+### 结论
+
+**Temu 的关键词搜索与商品详情是「登录墙」保护的产品设计，不是可以靠伪造头绕过的技术门槛。**
+
+免登录能用的只有 `/api/alexa/homepage/goods_list`（首页推荐位），
+它**不接受关键词参数**（传 `scene:"search"` 会被忽略，返回的仍是首页商品 —— 实测确认）。
+
+### 可行路径
+
+| 方式 | 关键词 | 全字段 | 成本 |
+|---|---|---|---|
+| Apify actor | ✅ | ✅ | $0.01/条 |
+| 本机浏览器 + 人工登录一次 | ✅ | ✅ | 免费 |
+| 住宅代理 + 自建 | ✅ | ✅ | 代理月费 |
+
+### 附：商品页在浏览器里**不跳登录**的条件
+
+```
+https://www.temu.com/goods.html?goods_id=601100218100590     ← 短 URL，不跳登录 ✅
+https://www.temu.com/<超长SEO标题>-g-601100218100590.html    ← 长 URL，会跳登录 ❌
+```
+加上 `refer_page_sn=10032` / `refer_page_el_sn=207307` 等参数更稳。
+即使用短 URL，页面仍会触发 `obtain_captcha`（点选验证码），因为**详情数据要登录才能取**。
