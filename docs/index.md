@@ -2,7 +2,7 @@
 
 > 本项目所有逆向成果与踩坑记录的入口。
 >
-> 仓库：https://github.com/tom982346-ctrl/temu-amazon-scraper**这些内容全部来自 2026-10-26 的实际抓取**，不是推测。
+> 仓库：https://github.com/xianjun-bit/temu-amazon-scraper**这些内容全部来自 2026-10-26 的实际抓取**，不是推测。
 
 ## 页面
 

@@ -10,7 +10,7 @@ GitHub 的 wiki 是个独立 git 仓库（<repo>.wiki.git），且**必须先在
   2) 点 "Create the first page"，标题随便填（如 Home），点 Save
   3) 回到终端跑：  python3 push_wiki.py
 """
-import os, shutil, subprocess, sys, tempfile
+import os, re, shutil, subprocess, sys, tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).parent
@@ -25,7 +25,20 @@ def run(cmd, cwd=None):
     return r.returncode == 0
 
 def main():
-    repo = os.environ.get("WIKI_REPO", "tom982346-ctrl/temu-amazon-scraper")
+    # 仓库名从当前 git remote 自动推断（避免硬编码账号后失效）
+    repo = os.environ.get("WIKI_REPO", "")
+    if not repo:
+        try:
+            url = subprocess.run("git remote get-url origin", shell=True,
+                                 capture_output=True, text=True).stdout.strip()
+            m = re.search(r"github\.com[:/]([^/]+/[^/]+?)(?:\.git)?$", url)
+            if m:
+                repo = m.group(1)
+        except Exception:
+            pass
+    if not repo:
+        repo = "xianjun-bit/temu-amazon-scraper"
+    print(f">>> 目标 Wiki: {repo}")
     token = os.environ.get("GITHUB_TOKEN") or ""
     if not token:
         # 尝试从 gh 取
@@ -58,6 +71,10 @@ def main():
     if ok:
         print("\n✅ Wiki 推送成功！")
         print(f"   https://github.com/{repo}/wiki")
+        # 验证
+        chk = subprocess.run(f"git ls-remote https://github.com/{repo}.wiki.git",
+                             shell=True, capture_output=True, text=True)
+        print("   验证:", "✅ wiki 仓库已存在" if chk.returncode == 0 else "⚠️ 验证失败")
     else:
         print("\n❌ 推送失败。若提示 Repository not found，说明 wiki 还没初始化：")
         print(f"   浏览器打开 https://github.com/{repo}/wiki")

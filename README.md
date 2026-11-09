@@ -5,13 +5,13 @@
 
 ---
 
-> 🔗 **仓库**：https://github.com/tom982346-ctrl/temu-amazon-scraper
-> 📚 **Wiki**：https://github.com/tom982346-ctrl/temu-amazon-scraper/wiki
+> 🔗 **仓库**：https://github.com/xianjun-bit/temu-amazon-scraper
+> 📚 **Wiki**：https://github.com/xianjun-bit/temu-amazon-scraper/wiki
 > 📄 **文档目录**：仓库 [`wiki/`](wiki/) 目录（含全部逆向成果与踩坑记录）
 >
 > **另一台电脑一键复现**：
 > ```bash
-> git clone https://github.com/tom982346-ctrl/temu-amazon-scraper.git
+> git clone https://github.com/xianjun-bit/temu-amazon-scraper.git
 > cd temu-amazon-scraper
 > python3 setup.py
 > AMZ_KEYWORD="laundry bag" AMZ_LIMIT=80 vendor/amazon-scraper/.venv/bin/python amazon_collect.py
@@ -28,33 +28,35 @@
 > | [踩坑清单](wiki/05-pitfalls.md) | 环境代理、端口冲突、验证码死循环等 12 项 |
 > | [换机续作](wiki/06-handoff.md) | 在另一台电脑继续的完整步骤 |
 
-> 📖 在线文档（Pages）：https://tom982346-ctrl.github.io/temu-amazon-scraper/
+> 📖 在线文档（Pages）：https://xianjun-bit.github.io/temu-amazon-scraper/
 
-> 📖 在线文档（Pages）：https://tom982346-ctrl.github.io/temu-amazon-scraper/
+> 📖 在线文档（Pages）：https://xianjun-bit.github.io/temu-amazon-scraper/
 
-> 📖 在线文档（Pages）：https://tom982346-ctrl.github.io/temu-amazon-scraper/
+> 📖 在线文档（Pages）：https://xianjun-bit.github.io/temu-amazon-scraper/
 
-> 📖 在线文档（Pages）：https://tom982346-ctrl.github.io/temu-amazon-scraper/
+> 📖 在线文档（Pages）：https://xianjun-bit.github.io/temu-amazon-scraper/
 
-> 📖 在线文档（Pages）：https://tom982346-ctrl.github.io/temu-amazon-scraper/
+> 📖 在线文档（Pages）：https://xianjun-bit.github.io/temu-amazon-scraper/
 
-> 📖 在线文档（Pages）：https://tom982346-ctrl.github.io/temu-amazon-scraper/
+> 📖 在线文档（Pages）：https://xianjun-bit.github.io/temu-amazon-scraper/
 
-> 📖 在线文档（Pages）：https://tom982346-ctrl.github.io/temu-amazon-scraper/
+> 📖 在线文档（Pages）：https://xianjun-bit.github.io/temu-amazon-scraper/
 
-> 📖 在线文档（Pages）：https://tom982346-ctrl.github.io/temu-amazon-scraper/
+> 📖 在线文档（Pages）：https://xianjun-bit.github.io/temu-amazon-scraper/
 
-> 📖 在线文档（Pages）：https://tom982346-ctrl.github.io/temu-amazon-scraper/
+> 📖 在线文档（Pages）：https://xianjun-bit.github.io/temu-amazon-scraper/
 
-> 📖 在线文档（Pages）：https://tom982346-ctrl.github.io/temu-amazon-scraper/
+> 📖 在线文档（Pages）：https://xianjun-bit.github.io/temu-amazon-scraper/
 
-> 📖 在线文档（Pages）：https://tom982346-ctrl.github.io/temu-amazon-scraper/
+> 📖 在线文档（Pages）：https://xianjun-bit.github.io/temu-amazon-scraper/
 
-> 📖 在线文档（Pages）：https://tom982346-ctrl.github.io/temu-amazon-scraper/
+> 📖 在线文档（Pages）：https://xianjun-bit.github.io/temu-amazon-scraper/
 
-> 📖 在线文档（Pages）：https://tom982346-ctrl.github.io/temu-amazon-scraper/
+> 📖 在线文档（Pages）：https://xianjun-bit.github.io/temu-amazon-scraper/
 
-> 📖 在线文档（Pages）：https://tom982346-ctrl.github.io/temu-amazon-scraper/
+> 📖 在线文档（Pages）：https://xianjun-bit.github.io/temu-amazon-scraper/
+
+> 📖 在线文档（Pages）：https://xianjun-bit.github.io/temu-amazon-scraper/
 
 > 📖 在线文档（Pages）：https://tom982346-ctrl.github.io/temu-amazon-scraper/
 

@@ -15,7 +15,7 @@
 
 ```bash
 # 方式 A：从 GitHub clone（推荐，代码与文档同步更新）
-git clone https://github.com/tom982346-ctrl/temu-amazon-scraper.git
+git clone https://github.com/xianjun-bit/temu-amazon-scraper.git
 cd temu-amazon-scraper
 python3 setup.py
 AMZ_KEYWORD="laundry bag" AMZ_LIMIT=80 vendor/amazon-scraper/.venv/bin/python amazon_collect.py
@@ -205,7 +205,7 @@ GitHub 的 wiki 是个**惰性创建**的独立 git 仓库：只有在网页上�
 | `GET /repos/{owner}/{repo}/wiki/pages` | 404 Not Found |
 
 **唯一解法**（一次性，30 秒）：
-1. 浏览器打开 `https://github.com/tom982346-ctrl/temu-amazon-scraper/wiki`
+1. 浏览器打开 `https://github.com/xianjun-bit/temu-amazon-scraper/wiki`
 2. 点 **"Create the first page"**
 3. 标题填 `Home`，正文随便填一行，**Save**
 4. 回到终端跑：`python3 push_wiki.py`
@@ -218,7 +218,7 @@ GitHub 的 wiki 是个**惰性创建**的独立 git 仓库：只有在网页上�
 
 ```
 ✓ xianjun-bit     ← 当时是 active
-✓ tom982346-ctrl  ← 仓库实际归属
+✓ xianjun-bit  ← 仓库实际归属
 ```
 
 active 账号是 `xianjun-bit` 时，**所有 git push 都会报 `Repository not found`**
@@ -228,11 +228,63 @@ active 账号是 `xianjun-bit` 时，**所有 git push 都会报 `Repository not
 **排查方法**：
 ```bash
 gh auth status              # 看谁是 active
-gh auth switch --user tom982346-ctrl
+gh auth switch --user xianjun-bit
 gh auth setup-git           # 让 git 用 gh 的凭据
 ```
 
-**已处理**：active 账号已切到 `tom982346-ctrl`（项目归属账号），`gh auth setup-git` 已配好，
+**已处理**：active 账号已切到 `xianjun-bit`（项目归属账号），`gh auth setup-git` 已配好，
 现在 `git push` / `git fetch` 都正常。
 
 > 如果以后要在别的账号下推别的项目，用 `gh auth switch` 切回去即可。
+
+---
+
+## 【重要】仓库已迁移到 xianjun-bit 账号（2026-11-09）
+
+原仓库 `tom982346-ctrl/temu-amazon-scraper` → 现仓库 **`xianjun-bit/temu-amazon-scraper`**
+
+| 项 | 值 |
+|---|---|
+| 新仓库 | https://github.com/xianjun-bit/temu-amazon-scraper |
+| Pages 站点 | https://xianjun-bit.github.io/temu-amazon-scraper/ ✅ 已部署（Actions） |
+| GitHub Wiki | https://github.com/xianjun-bit/temu-amazon-scraper/wiki ⚠️ 待初始化 |
+| git remote | 已指向新地址 |
+
+**旧仓库还在**（public，未删除），历史提交完整保留。
+
+### 迁移时踩的坑
+
+**① gh 多账号**
+本机有两个 GitHub 账号，`gh auth status` 里 active 的那个决定所有 git 操作的凭据。
+active 不是仓库归属账号时，push 会报 `Repository not found`（极易误判为仓库被删）。
+
+```bash
+gh auth status                # 看谁是 active
+gh auth switch --user xianjun-bit
+gh auth setup-git
+```
+
+**② local config 的 username 锁定**
+之前给旧仓库设过 `credential.https://github.com.username`，迁仓库后要清掉，
+否则 git 会拿旧账号去认证新仓库：
+
+```bash
+git config --unset credential.https://github.com.username
+```
+
+**③ token scope 差异**
+- `tom982346-ctrl` 的 scope：`gist, read:org, repo` —— **缺 workflow**
+  → 推 `.github/workflows/*.yml` 会被拒：
+  `refusing to allow an OAuth App to create or update workflow without workflow scope`
+- `xianjun-bit` 的 scope：`gist, read:org, repo, workflow` —— 齐全
+
+所以 Pages 部署在旧账号上做不成，迁到新账号后改用 Actions 部署就一次通过。
+
+### push_wiki.py 已改为自动推断仓库名
+
+之前硬编码了 `tom982346-ctrl/temu-amazon-scraper`，现在从 `git remote get-url origin`
+正则提取，换账号不会再失效。也可用环境变量覆盖：
+
+```bash
+WIKI_REPO=xxx/yyy python3 push_wiki.py
+```
