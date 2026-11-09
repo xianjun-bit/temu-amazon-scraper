@@ -170,3 +170,69 @@ http://127.0.0.1:PORT/sellers/details?...
 - **Temu 详情接口需 anti-token 签名**，纯 JS 无法伪造
 - **Amazon 偶发空返回**，已加 3 次重试；批量跑时建议保留重试逻辑
 - **新机器若设了 HTTP_PROXY**，`curl_cffi`/`urllib` 会走代理导致 502 —— `setup.sh` 会清
+
+---
+
+## 【专题】文档同步拓扑与 GitHub Wiki 初始化（2026-11-09）
+
+### 三份文档分别在哪
+
+| 位置 | 内容 | 状态 |
+|---|---|---|
+| `wiki/*.md`（本地） | 8 个源文件（含 `00-index.md`） | ✅ 权威源 |
+| `docs/*.md`（GitHub Pages） | 由 `build_pages.py` 从 `wiki/` 生成 | ✅ **自动**，已同步 |
+| GitHub Wiki（网页版） | **独立** git 仓库 `xxx.wiki.git` | ⚠️ **未初始化**，需手动一次 |
+
+> ⚠️ `docs/` 由脚本生成，**不要手改** —— 改 `wiki/` 再跑 `build_pages.py`。
+
+### build_pages.py 的坑（已修）
+
+`PAGES` 列表原本是**手写硬编码**的，新增 `07-GitHub项目调研.md` 时忘记加进去，
+结果 Pages 站点少了这一页（而 `wiki/` 目录里是有的 —— 两边不一致）。
+
+已改成 `glob` 自动扫描 + 导航栏自动生成，以后新增页面不会再漏。
+
+### GitHub Wiki 必须手动初始化一次
+
+GitHub 的 wiki 是个**惰性创建**的独立 git 仓库：只有在网页上保存第一个页面时
+才会生成 `xxx.wiki.git`。以下方式**全部无效**：
+
+| 尝试 | 结果 |
+|---|---|
+| `git clone xxx.wiki.git` | `Repository not found` |
+| `git push` 到 `xxx.wiki.git` | `Repository not found` |
+| `PUT /repos/{owner}/{repo}/wiki/pages/Home` | 404 Not Found |
+| `GET /repos/{owner}/{repo}/wiki/pages` | 404 Not Found |
+
+**唯一解法**（一次性，30 秒）：
+1. 浏览器打开 `https://github.com/tom982346-ctrl/temu-amazon-scraper/wiki`
+2. 点 **"Create the first page"**
+3. 标题填 `Home`，正文随便填一行，**Save**
+4. 回到终端跑：`python3 push_wiki.py`
+
+之后 `push_wiki.py` 就能正常推送全部页面（`00-index.md` 会自动转成 `Home.md`）。
+
+### gh 账号切换的坑（2026-11-09 遇到）
+
+`gh auth status` 显示本机有两个 GitHub 账号：
+
+```
+✓ xianjun-bit     ← 当时是 active
+✓ tom982346-ctrl  ← 仓库实际归属
+```
+
+active 账号是 `xianjun-bit` 时，**所有 git push 都会报 `Repository not found`**
+（仓库在另一个账号下，而 credential helper 给的是 active 账号的 token）。
+`gh api` 同样 404 —— 很容易误判成「仓库被删了」。
+
+**排查方法**：
+```bash
+gh auth status              # 看谁是 active
+gh auth switch --user tom982346-ctrl
+gh auth setup-git           # 让 git 用 gh 的凭据
+```
+
+**已处理**：active 账号已切到 `tom982346-ctrl`（项目归属账号），`gh auth setup-git` 已配好，
+现在 `git push` / `git fetch` 都正常。
+
+> 如果以后要在别的账号下推别的项目，用 `gh auth switch` 切回去即可。
