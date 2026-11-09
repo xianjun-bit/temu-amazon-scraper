@@ -12,14 +12,18 @@ ROOT = Path(__file__).parent
 WIKI = ROOT / "wiki"
 DOCS = ROOT / "docs"
 
-PAGES = [
-    ("01-status-overview.md", "现状总览"),
-    ("02-temu-antibot.md", "Temu 反爬拆解"),
-    ("03-temu-api-reverse.md", "Temu API 逆向"),
-    ("04-amazon-practice.md", "Amazon 实战"),
-    ("05-pitfalls.md", "踩坑清单"),
-    ("06-handoff.md", "换机续作"),
-]
+# 自动扫描 wiki/ 目录（新增页面不用再手改这里，避免漏掉）
+def _scan_pages():
+    out = []
+    for f in sorted(WIKI.glob("*.md")):
+        if f.name == "00-index.md":
+            continue
+        if ".backup" in f.name or f.name.startswith("."):
+            continue
+        out.append((f.name, f.stem))
+    return out
+
+PAGES = _scan_pages()
 
 DOCS.mkdir(parents=True, exist_ok=True)  # WorkBuddy 路径层对 exist_ok 也会抛，忽略
 
@@ -32,14 +36,17 @@ idx = (WIKI / "00-index.md").read_text()
 (DOCS / "index.md").write_text(idx)
 
 # 顶部导航（插到每个页面开头）
-NAV = """<div align="center">
+def _nav():
+    links = " · ".join(f"[{name}]({fn})" for fn, name in PAGES)
+    return f"""<div align="center">
 
-**[← 返回目录](index.md)** · [现状总览](01-status-overview.md) · [Temu 反爬](02-temu-antibot.md) · [API 逆向](03-temu-api-reverse.md) · [Amazon 实战](04-amazon-practice.md) · [踩坑清单](05-pitfalls.md) · [换机续作](06-handoff.md)
+**[← 返回目录](index.md)** · {links}
 
 </div>
 
 ---
 """
+NAV = _nav()
 for src, _ in PAGES:
     p = DOCS / src
     p.write_text(NAV + p.read_text())

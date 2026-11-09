@@ -1,6 +1,6 @@
 <div align="center">
 
-**[← 返回目录](index.md)** · [现状总览](01-status-overview.md) · [Temu 反爬](02-temu-antibot.md) · [API 逆向](03-temu-api-reverse.md) · [Amazon 实战](04-amazon-practice.md) · [踩坑清单](05-pitfalls.md) · [换机续作](06-handoff.md)
+**[← 返回目录](index.md)** · [01-status-overview](01-status-overview.md) · [02-temu-antibot](02-temu-antibot.md) · [03-temu-api-reverse](03-temu-api-reverse.md) · [04-amazon-practice](04-amazon-practice.md) · [05-pitfalls](05-pitfalls.md) · [06-handoff](06-handoff.md) · [07-GitHub项目调研](07-GitHub项目调研.md)
 
 </div>
 
